@@ -1,0 +1,30 @@
+<configs>
+  <!--
+      items.xml — PortalMod
+      Item craftable que coloca el bloque portalBlock en el mundo.
+  -->
+  <append xpath="/items">
+
+    <item name="portalBlockItem">
+      <property name="Extends" value="baseFullBlockPlaceHolder" />
+      <property name="CustomIcon" value="portalBlockItem" />
+      <property name="CustomIconTint" value="255,255,255" />
+      <property name="HoldType" value="47" />
+      <property name="Group" value="Building" />
+      <property name="Stacknumber" value="10" />
+      <property name="EconomicValue" value="800" />
+      <property name="EconomicBundleSize" value="1" />
+
+      <property class="Action0">
+        <property name="Class" value="Place" />
+      </property>
+
+      <property name="Block" value="portalBlock" />
+
+      <effect_group name="Item Modifiers">
+        <triggered_effect trigger="onSelfPrimaryActionEnd" action="PlaySound" sound="place_wood" />
+      </effect_group>
+    </item>
+
+  </append>
+</configs>

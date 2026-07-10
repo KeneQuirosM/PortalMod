@@ -1,0 +1,80 @@
+<configs>
+  <!--
+      blocks.xml — PortalMod
+      Define el bloque unico "portalBlock". No existe distincion madre/hijo:
+      cualquier portal colocado puede actuar como origen o destino segun la
+      vinculacion por tag que gestiona PortalManager.cs en tiempo de ejecucion.
+
+      NOTA V3.0: los bloques XML siguen usando <configs><append xpath="/blocks">
+      como raiz de parcheo (mismo patron que en A21/1.0). Se usa reinforcedConcreteBlock
+      como base solida 1x2x1 (multiblock alto x2) para dar presencia fisica al portal.
+  -->
+  <append xpath="/blocks">
+
+    <!-- ================= PORTAL BLOCK ================= -->
+    <block name="portalBlock" extends="reinforcedConcreteBlockBase">
+
+      <!-- Multiblock 1 ancho x 2 alto x 1 profundo: marco de portal -->
+      <property name="MultiBlockDim" value="1,2,1" />
+      <property name="Shape" value="ModelEntity" />
+      <property name="Model" value="#PortalMod:Models/Prefabs/PortalFrame.prefab" />
+      <!-- TODO: verificar en Assembly-CSharp V3.0 la ruta real de recursos empaquetados (Bundle) del mod -->
+
+      <property name="Class" value="Block" />
+      <property name="Material" value="Mmetal_scrap" />
+      <property name="EconomicValue" value="0" />
+      <property name="Group" value="Building" />
+      <property name="CustomIcon" value="portalBlockItem" />
+      <property name="CreativeMode" value="Player" />
+
+      <!-- Habilita interaccion con tecla E (abrir menu de tag / teletransporte) -->
+      <property name="IsActivated" value="true" />
+      <property name="ActivationDistance" value="4" />
+      <property name="OnlyPlaceableOnFace" value="North,South,East,West" />
+
+      <!-- Tag interna que usa PortalBlockPatch.cs para reconocer el bloque -->
+      <property name="IsPortalBlock" value="true" />
+
+      <!-- Que no se pueda "usar" como contenedor ni destruir con un click -->
+      <property name="ParticleOnDestroy" value="destroy_wood_small" />
+      <property name="DowngradeBlock" value="terrainRubble" />
+
+      <!-- Resistencia -->
+      <property name="Health" value="4000" />
+      <property name="HitMaskAll" value="0" />
+
+      <!--
+          ESTADOS VISUALES (inactivo / activo):
+          El sistema de bloques V3.0 permite variantes visuales via
+          "Meta"/"Variant" property combinado con BlockActivationCommand,
+          o via un segundo bloque enlazado (downgrade/upgrade block) que se
+          intercambia en runtime mediante World.SetBlockRPC cuando
+          PortalManager detecta que el par fue encontrado.
+
+          Aqui se define un unico modelo base (portalBlock) y se deja
+          "PortalBlockActive" como bloque alternativo que PortalBlockPatch.cs
+          puede aplicar con World.SetBlockRPC() al vincularse el par.
+          Ajusta "Model" abajo si tienes assets distintos para el estado activo.
+      -->
+      <property name="PortalModel_Inactive" value="#PortalMod:Models/Prefabs/PortalFrame_Inactive.prefab" />
+      <property name="PortalModel_Active" value="#PortalMod:Models/Prefabs/PortalFrame_Active.prefab" />
+
+      <drop event="Destroy" name="portalBlockItem" count="1" prob="1" />
+      <drop event="Harvest" name="scrapIron" count="4,8" tool_category="Disassemble" />
+
+      <property name="FilterTags" value="portal" />
+      <property name="Tags" value="portalBlock" />
+    </block>
+
+    <!--
+        Variante "activa" opcional del bloque (mismo modelo base, distinta malla/efecto).
+        Se usa unicamente como referencia visual — el estado real (huerfano/vinculado)
+        siempre vive en PortalManager, esto es solo cosmetico.
+    -->
+    <block name="portalBlockActive" extends="portalBlock">
+      <property name="Model" value="#PortalMod:Models/Prefabs/PortalFrame_Active.prefab" />
+      <property name="DescriptionKey" value="portalBlockActiveDesc" />
+    </block>
+
+  </append>
+</configs>

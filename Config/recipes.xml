@@ -1,0 +1,16 @@
+<configs>
+  <!--
+      recipes.xml — PortalMod
+      Receta de portalBlockItem, crafteable unicamente en workbench.
+  -->
+  <append xpath="/recipes">
+
+    <recipe name="portalBlockItem" count="1" craft_area="workbench" craft_tool="toolCraftWorkbenchAdvanced" tags="craftingFromWorkbenchOnly">
+      <ingredient name="resourceIron" count="15" />
+      <ingredient name="resourceForgedIron" count="5" />
+      <ingredient name="resourceElectricParts" count="3" />
+      <property name="craft_time" value="60" />
+    </recipe>
+
+  </append>
+</configs>

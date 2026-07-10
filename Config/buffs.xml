@@ -1,0 +1,36 @@
+<configs>
+  <!--
+      buffs.xml — PortalMod
+      buffPortalTravel: aplicado al jugador al salir de un portal.
+      Congela el movimiento durante la transicion (2s) y dispara
+      efecto de particulas/sonido de salida.
+  -->
+  <append xpath="/buffs">
+
+    <buff name="buffPortalTravel" name_key="buffPortalTravelName" tooltip_key="buffPortalTravelDesc"
+          icon="ui_game_symbol_stun" iconColor="120,200,255" hidden="false"
+          duration="2" DebuffPlayer="false">
+
+      <!-- Congela al jugador: velocidad de movimiento a 0 durante toda la duracion -->
+      <effect_group name="Portal Freeze">
+        <passive_effect name="ModifyMoveSpeed" operation="perc_set" value="0" />
+        <passive_effect name="ModifyRunSpeed" operation="perc_set" value="0" />
+        <passive_effect name="JumpModifier" operation="perc_set" value="0" />
+      </effect_group>
+
+      <!-- Efecto de salida: particulas + sonido al iniciar el buff (justo tras teletransportar) -->
+      <triggered_effect trigger="onSelfBuffStart" action="PlayParticleEffect" particle="teleportParticle" particle_scale="1" />
+      <triggered_effect trigger="onSelfBuffStart" action="PlaySound" sound="portal_teleport_out" />
+      <!-- TODO: verificar en Assembly-CSharp V3.0 si el sistema de buffs expone
+           particle bundles propios (BuffClass) o si se requiere disparar el efecto
+           manualmente desde PortalTeleport.cs via Manager.Instance / GameManager -->
+
+      <triggered_effect trigger="onSelfBuffUpdate" action="PlayParticleEffect" particle="teleportParticleLoop" particle_scale="1" />
+
+      <!-- Restaura velocidad automaticamente al expirar el buff (duration=2s) -->
+      <triggered_effect trigger="onSelfBuffRemove" action="PlaySound" sound="portal_teleport_end" />
+
+    </buff>
+
+  </append>
+</configs>
