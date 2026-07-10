@@ -6,9 +6,10 @@
   <append xpath="/recipes">
 
     <recipe name="portalBlockItem" count="1" craft_area="workbench" craft_tool="toolCraftWorkbenchAdvanced" tags="craftingFromWorkbenchOnly">
-      <ingredient name="resourceIron" count="15" />
-      <ingredient name="resourceForgedIron" count="5" />
-      <ingredient name="resourceElectricParts" count="3" />
+      <ingredient name="resourceScrapIron" count="1500" />
+      <ingredient name="resourceForgedIron" count="450" />
+      <ingredient name="resourceElectricParts" count="125" />
+      <ingredient name="resourceDuctTape" count="20" />
       <property name="craft_time" value="60" />
     </recipe>
 
