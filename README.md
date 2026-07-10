@@ -125,6 +125,7 @@ PortalMod/
 │   ├── items.xml           Item crafteable "portalBlockItem"
 │   ├── recipes.xml         Receta de workbench
 │   ├── buffs.xml           buffPortalTravel
+│   ├── sounds.xml          SoundDataNode "guppyKeyUsed" (sonido de activacion)
 │   └── localization.txt    Strings en english / Spanish (es-ES)
 ├── Harmony/
 │   ├── PortalMod.csproj
@@ -153,11 +154,12 @@ PortalMod/
 
 **Nota sobre `Resources/`**: los bundles `.unity3d` y los `.png` de
 `ItemIcons/` deben subirse manualmente al repositorio junto al resto del mod
-— no se generan ni se validan desde este proyecto C#. Los nombres exactos de
+— no se generan ni se validan desde este proyecto C#. Los nombres de
 prefab/clip DENTRO de cada bundle (usados en los atributos
-`#@modfolder:...?NombrePrefab` de `blocks.xml`/`items.xml`/`buffs.xml`) solo
-se pueden confirmar abriendo el bundle en el Editor de Unity — están
-marcados como `TODO` en los XML correspondientes hasta que se verifiquen.
+`#@modfolder:...?NombrePrefab` de `blocks.xml`/`items.xml`/`buffs.xml`) ya
+están confirmados contra el XML original del mod de assets (SCore) — ver
+`TESTING.md` sección 10 para el detalle de cada uno — pero siguen sin
+probarse contra el juego real.
 
 ## Limitaciones conocidas / TODOs
 
@@ -176,13 +178,19 @@ puntos más relevantes:
   propio del mod.
 - Acceso al `XUiManager` del jugador local y nombres de controles del
   sistema de binding V3.0 (`XUiPortalTag.cs`, `windows.xml`).
+
+Ya resueltos (confirmados contra el XML original del mod de assets SCore,
+pendientes solo de probarse en el juego real — ver `TESTING.md`):
+
 - Nombres exactos de los prefabs/clips dentro de cada `.unity3d` en
-  `Resources/` (`blocks.xml`, `items.xml`, `buffs.xml` usan `NombrePrefab` /
-  `NombreClip` como placeholder literal hasta confirmarlos en el Editor).
-- Si `<triggered_effect>` en `buffs.xml` acepta referencias directas a
-  AssetBundle (`#@modfolder:...`) para `particle`/`sound`, igual que
-  `Model`/`Meshfile` en bloques e items, o si requiere pasar antes por un
-  registro en `Data/Config/sounds.xml` u otro sistema equivalente.
+  `Resources/`.
+- `<triggered_effect action="PlaySound">` en `buffs.xml` **no** acepta una
+  ruta de AssetBundle directa: requiere un nombre registrado en
+  `Config/sounds.xml` (ver `SoundDataNode` `guppyKeyUsed`). `particle`
+  (`PlayParticleEffect`) y `AttachPrefabToEntity` sí aceptan rutas
+  `#@modfolder:...` directas.
+- `Meshfile`/`DropMeshfile` son las propiedades correctas para el mesh en
+  mano/inventario y en el suelo de un item.
 
 Si compilas contra tu propio `Assembly-CSharp.dll` y alguna firma no
 coincide, Harmony fallará de forma explícita en el log al hacer

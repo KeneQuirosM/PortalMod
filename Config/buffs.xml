@@ -12,20 +12,20 @@
       Y despues del teletransporte (origen y destino respectivamente), como
       refuerzo adicional a lo que ya hace este buff en el jugador.
 
-      ASSETS: este buff ahora referencia los bundles ya subidos en Resources/
-      (gupFuturePortal4.unity3d como flash/destello de teletransporte,
-      gupKeyCardSound.unity3d como sonido de activacion, gupTeleportRide.unity3d
-      como efecto de viaje en loop) usando el mismo formato
-      "#@modfolder:<ruta>?<NombrePrefab/Clip>" que blocks.xml/items.xml.
-      TODO IMPORTANTE: no se pudo confirmar sin el juego real si los atributos
-      "particle"/"sound" de <triggered_effect> aceptan referencias directas a
-      AssetBundle igual que "Model"/"Meshfile" en blocks.xml/items.xml, o si en
-      su lugar requieren un nombre registrado previamente en un sistema de
-      particulas/sonidos propio de V3.0 (por ejemplo Data/Config/sounds.xml
-      para audio). Si el juego rechaza estas referencias al cargar el buff,
-      revisar sounds.xml para registrar un <SoundDataNode> propio que apunte al
-      clip dentro de gupKeyCardSound.unity3d, y de forma equivalente para las
-      particulas si V3.0 exige un registro similar.
+      ASSETS (CONFIRMADO contra el XML original del mod de assets SCore):
+        - gupFuturePortal4.unity3d (prefab guppyFuturePortal4.prefab) como
+          flash/destello de teletransporte al llegar.
+        - El sonido de activacion NO se referencia directo por ruta de
+          AssetBundle: los <triggered_effect action="PlaySound"> requieren un
+          nombre de sonido REGISTRADO previamente. Se registro
+          "guppyKeyUsed" en Config/sounds.xml, que apunta internamente al
+          clip "guppyKeyCardSound" dentro de gupKeyCardSound.unity3d — aqui
+          simplemente se referencia sound="guppyKeyUsed".
+        - gupTeleportRide.unity3d (prefab guppyTeleportRide) como efecto de
+          viaje: NO es una particula en loop sino un prefab que se adjunta a
+          la camara del jugador mientras dura el buff, via
+          action="AttachPrefabToEntity" / parent_transform="CameraNode", y se
+          quita explicitamente al terminar via action="RemovePrefabFromEntity".
   -->
   <append xpath="/buffs">
 
@@ -43,34 +43,26 @@
       <!--
           LLEGADA (justo al aplicarse el buff, con el jugador ya en el
           destino): destello/particula de teletransporte (gupFuturePortal4)
-          + sonido de activacion (gupKeyCardSound). particle_scale elevado a
-          proposito para "potenciar" el efecto de salida pedido.
-          TODO: verificar nombre exacto del prefab dentro de
-          gupFuturePortal4.unity3d y del clip dentro de gupKeyCardSound.unity3d
-          (inspeccion en Unity Editor); "NombrePrefab"/"NombreClip" son
-          placeholders literales hasta confirmarlo.
+          + sonido de activacion (guppyKeyUsed, registrado en sounds.xml).
+          particle_scale elevado a proposito para "potenciar" el efecto de
+          salida pedido. Tambien adjunta el prefab de "viaje"
+          (guppyTeleportRide) a la camara del jugador — ver bloque de abajo.
       -->
-      <triggered_effect trigger="onSelfBuffStart" action="PlayParticleEffect" particle="#@modfolder:Resources/gupFuturePortal4.unity3d?NombrePrefab" particle_scale="1.6" />
-      <triggered_effect trigger="onSelfBuffStart" action="PlaySound" sound="#@modfolder:Resources/gupKeyCardSound.unity3d?NombreClip" />
+      <triggered_effect trigger="onSelfBuffStart" action="PlayParticleEffect" particle="#@modfolder:Resources/gupFuturePortal4.unity3d?guppyFuturePortal4.prefab" particle_scale="1.6" />
+      <triggered_effect trigger="onSelfBuffStart" action="PlaySound" sound="guppyKeyUsed" />
 
       <!--
-          DURANTE la transicion (2s): efecto de "viaje" en loop
-          (gupTeleportRide), sustituye a la particula de energia generica que
-          se usaba antes de tener el bundle real.
-          TODO: verificar nombre exacto del prefab dentro de
-          gupTeleportRide.unity3d.
+          DURANTE la transicion (2s): prefab de "viaje" (guppyTeleportRide)
+          adjunto a la camara del jugador (parent_transform="CameraNode"),
+          no una particula en loop — asi es como lo usa el mod de assets
+          original. Se retira explicitamente al terminar el buff (ver
+          onSelfBuffRemove abajo); duration=2 en el <buff> ya limita cuanto
+          dura pegado a la camara aun si algo fallara al remover el prefab.
       -->
-      <triggered_effect trigger="onSelfBuffUpdate" action="PlayParticleEffect" particle="#@modfolder:Resources/gupTeleportRide.unity3d?NombrePrefab" particle_scale="1" />
+      <triggered_effect trigger="onSelfBuffStart" action="AttachPrefabToEntity" prefab="#@modfolder:Resources/gupTeleportRide.unity3d?guppyTeleportRide" parent_transform="CameraNode" local_offset="0,0,-1" local_rotation="0,180,0" />
 
-      <!--
-          Al finalizar (expira a los 2s, restaura velocidad automaticamente):
-          no se asigno un asset especifico de "cierre" en el mapeo de
-          recursos del mod. Se deja sin triggered_effect de sonido/particula
-          en vez de inventar un nombre no vanilla; si se quiere un efecto de
-          cierre, reutilizar aqui gupKeyCardSound.unity3d o el prefab de
-          gupFuturePortal4.unity3d con particle_scale menor.
-          TODO: confirmar si se desea un efecto de cierre y con que asset.
-      -->
+      <!-- Al finalizar (expira a los 2s, restaura velocidad automaticamente): quitar el prefab de viaje de la camara -->
+      <triggered_effect trigger="onSelfBuffRemove" action="RemovePrefabFromEntity" prefab="guppyTeleportRide" />
 
     </buff>
 

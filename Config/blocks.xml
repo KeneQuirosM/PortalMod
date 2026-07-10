@@ -21,12 +21,10 @@
           Modelo 3D del estado INACTIVO/huerfano: bundle gupFuturePortal1.unity3d
           (ver Resources/). Formato de referencia V3.0: "#@modfolder:<ruta
           relativa al mod>?<NombrePrefab>".
-          TODO: verificar nombre exacto del prefab dentro del bundle — requiere
-          inspeccion en Unity Editor (abrir gupFuturePortal1.unity3d y anotar
-          el nombre del GameObject raiz exportado). "NombrePrefab" abajo es un
-          placeholder literal hasta confirmarlo.
+          Nombre de prefab CONFIRMADO contra el XML original del mod de
+          assets (SCore): guppyFuturePortal1.prefab.
       -->
-      <property name="Model" value="#@modfolder:Resources/gupFuturePortal1.unity3d?NombrePrefab" />
+      <property name="Model" value="#@modfolder:Resources/gupFuturePortal1.unity3d?guppyFuturePortal1.prefab" />
 
       <property name="Class" value="Block" />
       <property name="Material" value="Mmetal_scrap" />
@@ -105,10 +103,9 @@
     <block name="portalBlockActive" extends="portalBlock">
       <!--
           Modelo 3D del estado ACTIVO/vinculado: bundle gupFuturePortal6.unity3d.
-          TODO: verificar nombre exacto del prefab dentro del bundle (inspeccion
-          en Unity Editor); "NombrePrefab" es un placeholder literal.
+          Nombre de prefab CONFIRMADO: guppyFuturePortal6.prefab.
       -->
-      <property name="Model" value="#@modfolder:Resources/gupFuturePortal6.unity3d?NombrePrefab" />
+      <property name="Model" value="#@modfolder:Resources/gupFuturePortal6.unity3d?guppyFuturePortal6.prefab" />
       <property name="DescriptionKey" value="portalBlockActiveDesc" />
 
       <property name="LightColor" value="140,90,255" />

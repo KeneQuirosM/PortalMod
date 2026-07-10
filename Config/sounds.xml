@@ -1,0 +1,24 @@
+<configs>
+  <!--
+      sounds.xml — PortalMod
+      Registra el sonido "guppyKeyUsed" que usan buffPortalTravel (ver
+      buffs.xml, onSelfBuffStart) para el sonido de activacion del portal.
+
+      Se confirmo (contra el XML original del mod de assets SCore) que
+      <triggered_effect action="PlaySound"> NO acepta una ruta de AssetBundle
+      directa via "#@modfolder:...": necesita el NOMBRE de un
+      <SoundDataNode> registrado aqui, cuyo <AudioClip> es el que si
+      referencia el bundle/clip real.
+  -->
+  <append xpath="/Sounds">
+    <SoundDataNode name="guppyKeyUsed">
+      <AudioSource name="Sounds/AudioSource_VO" />
+      <AudioClip ClipName="#@modfolder:Resources/gupKeyCardSound.unity3d?guppyKeyCardSound" />
+      <LocalCrouchVolumeScale value="1.0" />
+      <CrouchNoiseScale value="0.5" />
+      <NoiseScale value=".5" />
+      <MaxVoices value="1" />
+      <MaxRepeatRate value="0.01" />
+    </SoundDataNode>
+  </append>
+</configs>

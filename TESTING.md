@@ -99,20 +99,33 @@ Estos puntos corresponden a los `// TODO: verificar en Assembly-CSharp
 V3.0 ...` dejados en el código y los XML por no poder confirmarse sin el
 juego real. Anotar el resultado real de cada uno al probar:
 
-- [ ] Nombre del prefab dentro de `gupFuturePortal1.unity3d` — anotar el
-      correcto (reemplaza el placeholder `NombrePrefab` en `blocks.xml`).
-- [ ] Nombre del prefab dentro de `gupFuturePortal6.unity3d` — anotar el
-      correcto (`blocks.xml`, bloque `portalBlockActive`).
-- [ ] Nombre del prefab dentro de `gupFuturePortal4.unity3d` — anotar el
-      correcto (`buffs.xml`, `onSelfBuffStart`).
-- [ ] Nombre del prefab dentro de `gupPortKeyCard.unity3d` — anotar el
-      correcto (`items.xml`, `Meshfile` de `portalBlockItem`).
-- [ ] Confirmar si `buffs.xml` acepta rutas `#@modfolder:` directamente en
-      los atributos `particle`/`sound` de `<triggered_effect>`, o si
-      requiere pasar por un registro previo (p. ej. `Data/Config/sounds.xml`).
-- [ ] Confirmar si `Meshfile` es la propiedad correcta para el mesh en
+- [x] Nombre del prefab dentro de cada bundle — **confirmados** contra el
+      XML original del mod de assets (SCore): `guppyFuturePortal1.prefab`
+      (`gupFuturePortal1.unity3d`, `blocks.xml`), `guppyFuturePortal6.prefab`
+      (`gupFuturePortal6.unity3d`, `blocks.xml`), `guppyFuturePortal4.prefab`
+      (`gupFuturePortal4.unity3d`, `buffs.xml`), `guppyPortKeyCard.prefab`
+      (`gupPortKeyCard.unity3d`, `items.xml` — `Meshfile`/`DropMeshfile`),
+      `guppyTeleportRide` (`gupTeleportRide.unity3d`, `buffs.xml`),
+      `guppyKeyCardSound` (`gupKeyCardSound.unity3d`, clip interno usado por
+      `sounds.xml`). Pendiente de verificar en el juego real que estos
+      nombres efectivamente cargan sin error (no se pudo probar en el
+      entorno de desarrollo de este mod).
+- [x] Confirmar si `buffs.xml` acepta rutas `#@modfolder:` directamente en
+      los atributos `particle`/`sound` de `<triggered_effect>` — **confirmado
+      que NO para sonido**: `action="PlaySound"` requiere un nombre de sonido
+      registrado en `Config/sounds.xml` (`SoundDataNode`), no una ruta de
+      AssetBundle directa; se agregó `sounds.xml` con el nodo `guppyKeyUsed`
+      y `buffs.xml` ahora usa `sound="guppyKeyUsed"`. Para `particle`
+      (`PlayParticleEffect`) y para prefabs adjuntos a entidad
+      (`AttachPrefabToEntity`) sí se confirmó que aceptan rutas
+      `#@modfolder:` directas.
+- [x] Confirmar si `Meshfile` es la propiedad correcta para el mesh en
       mano/inventario de items que extienden `baseFullBlockPlaceHolder` en
-      V3.0, o si se requiere `Model` u otra propiedad.
+      V3.0 — **confirmado**: `Meshfile` (mesh en mano) y `DropMeshfile`
+      (mesh tirado en el suelo) son ambas correctas; `items.xml` ya usa las dos.
+- [x] Confirmar si `sounds.xml` es necesario para registrar sonidos —
+      **confirmado**: se creó `Config/sounds.xml` (nuevo archivo) con el
+      `SoundDataNode` `guppyKeyUsed`.
 - [ ] Confirmar firmas exactas de los métodos parcheados con Harmony en
       `Assembly-CSharp.dll` V3.0: `Block.OnBlockPlaceBefore`,
       `Block.OnBlockActivated`, `Block.OnBlockRemoved` (`PortalBlockPatch.cs`).

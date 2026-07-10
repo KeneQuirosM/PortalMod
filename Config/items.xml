@@ -19,13 +19,14 @@
 
       <!--
           Modelo 3D en mano/inventario: bundle gupPortKeyCard.unity3d.
-          TODO: verificar nombre exacto del prefab dentro del bundle
-          (inspeccion en Unity Editor); "NombrePrefab" es un placeholder literal.
-          TODO: verificar si "Meshfile" es la propiedad correcta en V3.0 para
-          items con Extends="baseFullBlockPlaceHolder" (podria requerir en su
-          lugar "Model", igual que en blocks.xml, segun la clase base del item).
+          Nombre de prefab CONFIRMADO contra el XML original del mod de
+          assets (SCore): guppyPortKeyCard.prefab. "Meshfile" (mas
+          "DropMeshfile" para el mesh tirado en el suelo) se confirmo como la
+          propiedad correcta para este mesh en items que extienden
+          "baseFullBlockPlaceHolder".
       -->
-      <property name="Meshfile" value="#@modfolder:Resources/gupPortKeyCard.unity3d?NombrePrefab" />
+      <property name="Meshfile" value="#@modfolder:Resources/gupPortKeyCard.unity3d?guppyPortKeyCard.prefab" />
+      <property name="DropMeshfile" value="#@modfolder:Resources/gupPortKeyCard.unity3d?guppyPortKeyCard.prefab" />
 
       <!--
           Icono de inventario (2D): guppyFuturePortal6, sin extension (asi lo
