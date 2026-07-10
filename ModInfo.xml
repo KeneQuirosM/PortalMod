@@ -1,0 +1,12 @@
+<!--
+    ModInfo.xml — Formato V2 (obligatorio desde 7 Days to Die V1.0+)
+-->
+<xml>
+  <Name value="PortalMod" />
+  <DisplayName value="Portal Mod" />
+  <Version value="1.0.0" />
+  <Description value="Sistema de portales de teletransporte bidireccional por tag compartida, estilo Valheim. Coloca dos portales con el mismo nombre y viaja entre ellos instantaneamente." />
+  <Author value="KeneQuirosM" />
+  <Website value="https://github.com/KeneQuirosM/PortalMod" />
+  <GameVersion value="3.0" />
+</xml>

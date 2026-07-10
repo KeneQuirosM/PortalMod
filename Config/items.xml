@@ -1,0 +1,59 @@
+<configs>
+  <!--
+      items.xml — PortalMod
+      Item craftable que coloca el bloque portalBlock en el mundo.
+
+      NOTA sobre gupPortKeyCard: el mapeo de assets del mod reserva el icono
+      "gupPortKeyCard" para un futuro item tipo "llave/tarjeta" (no existe
+      ningun item de ese tipo en el mod todavia — solo portalBlockItem esta
+      definido). Por ahora ese icono queda sin usar y documentado aqui; el
+      modelo 3D gupPortKeyCard.unity3d SI se usa mas abajo como Meshfile de
+      portalBlockItem (el mesh en mano/inventario del item, reutilizando la
+      tematica de "llave" aunque el icono 2D que se ve en el inventario es
+      guppyFuturePortal6, no gupPortKeyCard).
+  -->
+  <append xpath="/items">
+
+    <item name="portalBlockItem">
+      <property name="Extends" value="baseFullBlockPlaceHolder" />
+
+      <!--
+          Modelo 3D en mano/inventario: bundle gupPortKeyCard.unity3d.
+          TODO: verificar nombre exacto del prefab dentro del bundle
+          (inspeccion en Unity Editor); "NombrePrefab" es un placeholder literal.
+          TODO: verificar si "Meshfile" es la propiedad correcta en V3.0 para
+          items con Extends="baseFullBlockPlaceHolder" (podria requerir en su
+          lugar "Model", igual que en blocks.xml, segun la clase base del item).
+      -->
+      <property name="Meshfile" value="#@modfolder:Resources/gupPortKeyCard.unity3d?NombrePrefab" />
+
+      <!--
+          Icono de inventario (2D): guppyFuturePortal6, sin extension (asi lo
+          lee 7D2D — el resolvedor de iconos busca el .png dentro de
+          Resources/ItemIcons/ por nombre).
+          TODO: marcar si la propiedad exacta de icono difiere en V3.0 (por
+          ejemplo si requiere "IconAtlas" o "CustomIconAtlas" ademas de
+          CustomIcon segun de que atlas se cargue en tiempo de ejecucion).
+      -->
+      <property name="CustomIcon" value="guppyFuturePortal6" />
+      <property name="CustomIconTint" value="ffffffff" />
+
+      <property name="HoldType" value="47" />
+      <property name="Group" value="Building" />
+      <property name="Stacknumber" value="10" />
+      <property name="EconomicValue" value="800" />
+      <property name="EconomicBundleSize" value="1" />
+
+      <property class="Action0">
+        <property name="Class" value="Place" />
+      </property>
+
+      <property name="Block" value="portalBlock" />
+
+      <effect_group name="Item Modifiers">
+        <triggered_effect trigger="onSelfPrimaryActionEnd" action="PlaySound" sound="place_wood" />
+      </effect_group>
+    </item>
+
+  </append>
+</configs>

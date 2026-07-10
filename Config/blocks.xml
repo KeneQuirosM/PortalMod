@@ -1,0 +1,136 @@
+<configs>
+  <!--
+      blocks.xml — PortalMod
+      Define el bloque unico "portalBlock". No existe distincion madre/hijo:
+      cualquier portal colocado puede actuar como origen o destino segun la
+      vinculacion por tag que gestiona PortalManager.cs en tiempo de ejecucion.
+
+      NOTA V3.0: los bloques XML siguen usando <configs><append xpath="/blocks">
+      como raiz de parcheo (mismo patron que en A21/1.0). Se usa reinforcedConcreteBlock
+      como base solida 1x2x1 (multiblock alto x2) para dar presencia fisica al portal.
+  -->
+  <append xpath="/blocks">
+
+    <!-- ================= PORTAL BLOCK ================= -->
+    <block name="portalBlock" extends="reinforcedConcreteBlockBase">
+
+      <!-- Multiblock 1 ancho x 2 alto x 1 profundo: marco de portal -->
+      <property name="MultiBlockDim" value="1,2,1" />
+      <property name="Shape" value="ModelEntity" />
+      <!--
+          Modelo 3D del estado INACTIVO/huerfano: bundle gupFuturePortal1.unity3d
+          (ver Resources/). Formato de referencia V3.0: "#@modfolder:<ruta
+          relativa al mod>?<NombrePrefab>".
+          TODO: verificar nombre exacto del prefab dentro del bundle — requiere
+          inspeccion en Unity Editor (abrir gupFuturePortal1.unity3d y anotar
+          el nombre del GameObject raiz exportado). "NombrePrefab" abajo es un
+          placeholder literal hasta confirmarlo.
+      -->
+      <property name="Model" value="#@modfolder:Resources/gupFuturePortal1.unity3d?NombrePrefab" />
+
+      <property name="Class" value="Block" />
+      <property name="Material" value="Mmetal_scrap" />
+      <property name="EconomicValue" value="0" />
+      <property name="Group" value="Building" />
+      <!-- Icono de inventario/creativo (ver Config/items.xml para el mismo icono en portalBlockItem) -->
+      <property name="CustomIcon" value="guppyFuturePortal6" />
+      <property name="CustomIconTint" value="ffffffff" />
+      <property name="CreativeMode" value="Player" />
+
+      <!-- Habilita interaccion con tecla E (abrir menu de tag / teletransporte) -->
+      <property name="IsActivated" value="true" />
+      <property name="ActivationDistance" value="4" />
+      <property name="OnlyPlaceableOnFace" value="North,South,East,West" />
+
+      <!-- Tag interna que usa PortalBlockPatch.cs para reconocer el bloque -->
+      <property name="IsPortalBlock" value="true" />
+
+      <!-- Que no se pueda "usar" como contenedor ni destruir con un click -->
+      <property name="ParticleOnDestroy" value="destroy_wood_small" />
+      <property name="DowngradeBlock" value="terrainRubble" />
+
+      <!-- Resistencia -->
+      <property name="Health" value="4000" />
+      <property name="HitMaskAll" value="0" />
+
+      <!--
+          ESTADOS VISUALES (inactivo / activo / pulso):
+          El sistema de bloques V3.0 permite variantes visuales via
+          "Meta"/"Variant" property combinado con BlockActivationCommand,
+          o via un segundo bloque enlazado (downgrade/upgrade block) que se
+          intercambia en runtime mediante World.SetBlockRPC cuando
+          PortalManager detecta que el par fue encontrado.
+
+          Aqui se define un unico modelo base (portalBlock, gupFuturePortal1)
+          y se dejan "portalBlockActive" / "portalBlockActivePulseHigh" como
+          bloques alternativos que PortalVisualFX.cs (Harmony/src) aplica con
+          World.SetBlockRPC() al vincularse/desvincularse el par y, para el
+          pulso, alternando entre las dos variantes activas en cada ambient
+          tick (~0.6s). El modelo de la variante activa (gupFuturePortal6) se
+          define mas abajo, en el bloque "portalBlockActive".
+      -->
+
+      <!--
+          LUZ (estado INACTIVO / huerfano): tenue, azul-grisacea, radio pequeno.
+          LightColor / LightIntensity / LightRadius son propiedades de bloque
+          vanilla usadas por antorchas, lamparas y hornos en 7 Days to Die;
+          controlan la luz que EMITE el bloque. "LightOpacity" (mencionada por
+          el usuario) es una propiedad vanilla distinta: controla cuanta luz
+          AJENA bloquea este bloque al proyectar sombras, no cuanta luz emite
+          el propio bloque — se deja en 0 para que el portal no proyecte
+          sombra dura sobre su propia luz.
+          TODO: verificar en Assembly-CSharp V3.0 / blocks.xml vanilla (p.ej.
+          "torchWall", "lanternBase01") los nombres exactos y rangos validos
+          de estas propiedades; los valores de abajo son de partida.
+      -->
+      <property name="LightColor" value="140,160,180" />
+      <property name="LightIntensity" value="0.35" />
+      <property name="LightRadius" value="2" />
+      <property name="LightOpacity" value="0" />
+
+      <drop event="Destroy" name="portalBlockItem" count="1" prob="1" />
+      <drop event="Harvest" name="scrapIron" count="4,8" tool_category="Disassemble" />
+
+      <property name="FilterTags" value="portal" />
+      <property name="Tags" value="portalBlock" />
+    </block>
+
+    <!--
+        Variante "ACTIVA" (par vinculado, fase BAJA del pulso): mismo modelo
+        base, luz azul-violeta mas intensa y de mayor radio que el estado
+        inactivo. El estado real (huerfano/vinculado) siempre vive en
+        PortalManager — este bloque es puramente cosmetico y es aplicado por
+        PortalVisualFX.SetBlockState().
+    -->
+    <block name="portalBlockActive" extends="portalBlock">
+      <!--
+          Modelo 3D del estado ACTIVO/vinculado: bundle gupFuturePortal6.unity3d.
+          TODO: verificar nombre exacto del prefab dentro del bundle (inspeccion
+          en Unity Editor); "NombrePrefab" es un placeholder literal.
+      -->
+      <property name="Model" value="#@modfolder:Resources/gupFuturePortal6.unity3d?NombrePrefab" />
+      <property name="DescriptionKey" value="portalBlockActiveDesc" />
+
+      <property name="LightColor" value="140,90,255" />
+      <property name="LightIntensity" value="0.85" />
+      <property name="LightRadius" value="4" />
+    </block>
+
+    <!--
+        Variante "ACTIVA, fase ALTA del pulso": identica a portalBlockActive
+        salvo LightIntensity/LightRadius ligeramente mayores. PortalVisualFX
+        alterna portalBlockActive <-> portalBlockActivePulseHigh cada ~0.6s
+        mientras el par siga vinculado, simulando el "leve pulso/parpadeo"
+        sin depender de una propiedad de flicker nativa (no confirmada).
+        TODO: si V3.0 expone una propiedad de parpadeo nativo en el bloque
+        (candidatos: "LightFlicker", "LightRandomness", o un "LightTemplate"
+        tipo "Torch"/"Candle"), se puede usar directamente sobre
+        portalBlockActive y eliminar esta variante + el toggle en C#.
+    -->
+    <block name="portalBlockActivePulseHigh" extends="portalBlockActive">
+      <property name="LightIntensity" value="1.15" />
+      <property name="LightRadius" value="4.5" />
+    </block>
+
+  </append>
+</configs>

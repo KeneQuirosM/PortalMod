@@ -1,0 +1,78 @@
+<configs>
+  <!--
+      buffs.xml — PortalMod
+      buffPortalTravel: aplicado al jugador justo DESPUES de teletransportarlo
+      (ver PortalTeleport.ExecuteTeleport), es decir con el jugador ya parado
+      en el portal de DESTINO. Congela el movimiento durante la transicion
+      (2s) y dispara los efectos de "llegada": flash + particulas + sonido.
+
+      El efecto del portal de ORIGEN (donde ya no queda ningun jugador al que
+      atarle un buff) se dispara aparte, directamente desde C#, ver
+      PortalVisualFX.SpawnTeleportBurst() llamado en PortalTeleport.cs antes
+      Y despues del teletransporte (origen y destino respectivamente), como
+      refuerzo adicional a lo que ya hace este buff en el jugador.
+
+      ASSETS: este buff ahora referencia los bundles ya subidos en Resources/
+      (gupFuturePortal4.unity3d como flash/destello de teletransporte,
+      gupKeyCardSound.unity3d como sonido de activacion, gupTeleportRide.unity3d
+      como efecto de viaje en loop) usando el mismo formato
+      "#@modfolder:<ruta>?<NombrePrefab/Clip>" que blocks.xml/items.xml.
+      TODO IMPORTANTE: no se pudo confirmar sin el juego real si los atributos
+      "particle"/"sound" de <triggered_effect> aceptan referencias directas a
+      AssetBundle igual que "Model"/"Meshfile" en blocks.xml/items.xml, o si en
+      su lugar requieren un nombre registrado previamente en un sistema de
+      particulas/sonidos propio de V3.0 (por ejemplo Data/Config/sounds.xml
+      para audio). Si el juego rechaza estas referencias al cargar el buff,
+      revisar sounds.xml para registrar un <SoundDataNode> propio que apunte al
+      clip dentro de gupKeyCardSound.unity3d, y de forma equivalente para las
+      particulas si V3.0 exige un registro similar.
+  -->
+  <append xpath="/buffs">
+
+    <buff name="buffPortalTravel" name_key="buffPortalTravelName" tooltip_key="buffPortalTravelDesc"
+          icon="ui_game_symbol_stun" iconColor="120,200,255" hidden="false"
+          duration="2" DebuffPlayer="false">
+
+      <!-- Congela al jugador: velocidad de movimiento a 0 durante toda la duracion -->
+      <effect_group name="Portal Freeze">
+        <passive_effect name="ModifyMoveSpeed" operation="perc_set" value="0" />
+        <passive_effect name="ModifyRunSpeed" operation="perc_set" value="0" />
+        <passive_effect name="JumpModifier" operation="perc_set" value="0" />
+      </effect_group>
+
+      <!--
+          LLEGADA (justo al aplicarse el buff, con el jugador ya en el
+          destino): destello/particula de teletransporte (gupFuturePortal4)
+          + sonido de activacion (gupKeyCardSound). particle_scale elevado a
+          proposito para "potenciar" el efecto de salida pedido.
+          TODO: verificar nombre exacto del prefab dentro de
+          gupFuturePortal4.unity3d y del clip dentro de gupKeyCardSound.unity3d
+          (inspeccion en Unity Editor); "NombrePrefab"/"NombreClip" son
+          placeholders literales hasta confirmarlo.
+      -->
+      <triggered_effect trigger="onSelfBuffStart" action="PlayParticleEffect" particle="#@modfolder:Resources/gupFuturePortal4.unity3d?NombrePrefab" particle_scale="1.6" />
+      <triggered_effect trigger="onSelfBuffStart" action="PlaySound" sound="#@modfolder:Resources/gupKeyCardSound.unity3d?NombreClip" />
+
+      <!--
+          DURANTE la transicion (2s): efecto de "viaje" en loop
+          (gupTeleportRide), sustituye a la particula de energia generica que
+          se usaba antes de tener el bundle real.
+          TODO: verificar nombre exacto del prefab dentro de
+          gupTeleportRide.unity3d.
+      -->
+      <triggered_effect trigger="onSelfBuffUpdate" action="PlayParticleEffect" particle="#@modfolder:Resources/gupTeleportRide.unity3d?NombrePrefab" particle_scale="1" />
+
+      <!--
+          Al finalizar (expira a los 2s, restaura velocidad automaticamente):
+          no se asigno un asset especifico de "cierre" en el mapeo de
+          recursos del mod. Se deja sin triggered_effect de sonido/particula
+          en vez de inventar un nombre no vanilla; si se quiere un efecto de
+          cierre, reutilizar aqui gupKeyCardSound.unity3d o el prefab de
+          gupFuturePortal4.unity3d con particle_scale menor.
+          TODO: confirmar si se desea un efecto de cierre y con que asset.
+      -->
+
+    </buff>
+
+  </append>
+</configs>

@@ -1,0 +1,93 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    PortalMod.csproj
+    Compila el DLL de Harmony para PortalMod (7 Days to Die V3.0 "Dead Hot Summer").
+
+    COMO USAR:
+      1. Copia/edita `Game7DaysToDiePath` abajo (o define la variable de entorno
+         `SEVENDAYS_INSTALL_DIR`) apuntando a la carpeta raiz de tu instalacion
+         de 7 Days to Die (la que contiene `7DaysToDieServer_Data` o `7DaysToDie_Data`).
+      2. Abre este proyecto en Visual Studio 2022 o JetBrains Rider.
+      3. Compila en Release. El DLL resultante se copia automaticamente a
+         `../` (la raiz de PortalMod), es decir junto a ModInfo.xml, para que
+         el mod quede listo para copiarse a `Mods/`.
+      4. Ver README.md para instrucciones detalladas de publicizado de
+         Assembly-CSharp.dll (obligatorio: el DLL de referencia debe estar
+         "publicized" con una herramienta como AssemblyPublicizer/Publicizer
+         de BepInEx para poder acceder a miembros privados/internos).
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>PortalMod</AssemblyName>
+    <RootNamespace>PortalMod</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <Deterministic>true</Deterministic>
+
+    <!--
+      Ruta a la instalacion de 7 Days To Die. Se puede sobreescribir con la
+      variable de entorno SEVENDAYS_INSTALL_DIR sin tocar este archivo, por
+      ejemplo en Windows:
+        setx SEVENDAYS_INSTALL_DIR "C:\Program Files (x86)\Steam\steamapps\common\7 Days To Die"
+      o en Linux/Proton:
+        export SEVENDAYS_INSTALL_DIR="$HOME/.steam/steam/steamapps/common/7 Days To Die"
+    -->
+    <Game7DaysToDiePath Condition="'$(SEVENDAYS_INSTALL_DIR)' != ''">$(SEVENDAYS_INSTALL_DIR)</Game7DaysToDiePath>
+    <Game7DaysToDiePath Condition="'$(Game7DaysToDiePath)' == ''">C:\Program Files (x86)\Steam\steamapps\common\7 Days To Die</Game7DaysToDiePath>
+
+    <!-- En servidores dedicados Linux la carpeta Managed cuelga de 7DaysToDieServer_Data -->
+    <ManagedDir Condition="Exists('$(Game7DaysToDiePath)\7DaysToDie_Data\Managed')">$(Game7DaysToDiePath)\7DaysToDie_Data\Managed</ManagedDir>
+    <ManagedDir Condition="'$(ManagedDir)' == '' AND Exists('$(Game7DaysToDiePath)\7DaysToDieServer_Data\Managed')">$(Game7DaysToDiePath)\7DaysToDieServer_Data\Managed</ManagedDir>
+    <ManagedDir Condition="'$(ManagedDir)' == ''">$(Game7DaysToDiePath)\7DaysToDieServer_Data\Managed</ManagedDir>
+
+    <!-- Salida directa a la raiz del mod, junto a ModInfo.xml -->
+    <OutputPath>..\</OutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Assembly-CSharp.dll debe estar PUBLICIZED (todos los miembros internal/private
+      expuestos como public) para poder compilar patches de Harmony contra ellos.
+      Ver README.md → "Publicizar Assembly-CSharp.dll".
+      Copia el DLL publicized a esta misma carpeta ManagedDir o ajusta el HintPath.
+    -->
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(ManagedDir)\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp-firstpass">
+      <HintPath>$(ManagedDir)\Assembly-CSharp-firstpass.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(ManagedDir)\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(ManagedDir)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>$(ManagedDir)\UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(ManagedDir)\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Xml" />
+    <Reference Include="System.Xml.Linq" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="src\**\*.cs" />
+  </ItemGroup>
+
+</Project>
