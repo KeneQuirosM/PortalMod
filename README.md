@@ -133,12 +133,31 @@ PortalMod/
 │       ├── PortalManager.cs    Registro/vinculacion/cooldown/persistencia
 │       ├── PortalTeleport.cs   Deteccion de colision y teletransporte
 │       ├── PortalBlockPatch.cs Harmony patches (colocar/activar/destruir)
+│       ├── PortalVisualFX.cs   Luz/particulas por estado + rafagas de teletransporte
 │       ├── XUiPortalTag.cs     Controller de la ventana de nombre de tag
 │       └── PortalUtils.cs      Helpers compartidos (identidad de jugador, HUD)
-└── UIFrames/
-    └── XUi_InGame/
-        └── windows.xml     Ventana popup "Nombrar portal"
+├── UIFrames/
+│   └── XUi_InGame/
+│       └── windows.xml     Ventana popup "Nombrar portal"
+└── Resources/
+    ├── gupFuturePortal1.unity3d   Modelo 3D: portalBlock estado INACTIVO
+    ├── gupFuturePortal6.unity3d   Modelo 3D: portalBlock estado ACTIVO
+    ├── gupFuturePortal4.unity3d   Efecto de particulas: teletransporte
+    ├── gupPortKeyCard.unity3d     Modelo 3D: portalBlockItem (mesh en mano)
+    ├── gupKeyCardSound.unity3d    Sonido: activacion del portal
+    ├── gupTeleportRide.unity3d    Efecto de particulas: viaje (loop del buff)
+    └── ItemIcons/
+        ├── guppyFuturePortal6.png Icono de inventario: portalBlockItem
+        └── gupPortKeyCard.png     Icono reservado (sin item asociado aun)
 ```
+
+**Nota sobre `Resources/`**: los bundles `.unity3d` y los `.png` de
+`ItemIcons/` deben subirse manualmente al repositorio junto al resto del mod
+— no se generan ni se validan desde este proyecto C#. Los nombres exactos de
+prefab/clip DENTRO de cada bundle (usados en los atributos
+`#@modfolder:...?NombrePrefab` de `blocks.xml`/`items.xml`/`buffs.xml`) solo
+se pueden confirmar abriendo el bundle en el Editor de Unity — están
+marcados como `TODO` en los XML correspondientes hasta que se verifiquen.
 
 ## Limitaciones conocidas / TODOs
 
@@ -157,6 +176,13 @@ puntos más relevantes:
   propio del mod.
 - Acceso al `XUiManager` del jugador local y nombres de controles del
   sistema de binding V3.0 (`XUiPortalTag.cs`, `windows.xml`).
+- Nombres exactos de los prefabs/clips dentro de cada `.unity3d` en
+  `Resources/` (`blocks.xml`, `items.xml`, `buffs.xml` usan `NombrePrefab` /
+  `NombreClip` como placeholder literal hasta confirmarlos en el Editor).
+- Si `<triggered_effect>` en `buffs.xml` acepta referencias directas a
+  AssetBundle (`#@modfolder:...`) para `particle`/`sound`, igual que
+  `Model`/`Meshfile` en bloques e items, o si requiere pasar antes por un
+  registro en `Data/Config/sounds.xml` u otro sistema equivalente.
 
 Si compilas contra tu propio `Assembly-CSharp.dll` y alguna firma no
 coincide, Harmony fallará de forma explícita en el log al hacer

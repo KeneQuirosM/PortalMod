@@ -17,14 +17,24 @@
       <!-- Multiblock 1 ancho x 2 alto x 1 profundo: marco de portal -->
       <property name="MultiBlockDim" value="1,2,1" />
       <property name="Shape" value="ModelEntity" />
-      <property name="Model" value="#PortalMod:Models/Prefabs/PortalFrame.prefab" />
-      <!-- TODO: verificar en Assembly-CSharp V3.0 la ruta real de recursos empaquetados (Bundle) del mod -->
+      <!--
+          Modelo 3D del estado INACTIVO/huerfano: bundle gupFuturePortal1.unity3d
+          (ver Resources/). Formato de referencia V3.0: "#@modfolder:<ruta
+          relativa al mod>?<NombrePrefab>".
+          TODO: verificar nombre exacto del prefab dentro del bundle — requiere
+          inspeccion en Unity Editor (abrir gupFuturePortal1.unity3d y anotar
+          el nombre del GameObject raiz exportado). "NombrePrefab" abajo es un
+          placeholder literal hasta confirmarlo.
+      -->
+      <property name="Model" value="#@modfolder:Resources/gupFuturePortal1.unity3d?NombrePrefab" />
 
       <property name="Class" value="Block" />
       <property name="Material" value="Mmetal_scrap" />
       <property name="EconomicValue" value="0" />
       <property name="Group" value="Building" />
-      <property name="CustomIcon" value="portalBlockItem" />
+      <!-- Icono de inventario/creativo (ver Config/items.xml para el mismo icono en portalBlockItem) -->
+      <property name="CustomIcon" value="guppyFuturePortal6" />
+      <property name="CustomIconTint" value="ffffffff" />
       <property name="CreativeMode" value="Player" />
 
       <!-- Habilita interaccion con tecla E (abrir menu de tag / teletransporte) -->
@@ -51,15 +61,14 @@
           intercambia en runtime mediante World.SetBlockRPC cuando
           PortalManager detecta que el par fue encontrado.
 
-          Aqui se define un unico modelo base (portalBlock) y se dejan
-          "portalBlockActive" / "portalBlockActivePulseHigh" como bloques
-          alternativos que PortalVisualFX.cs (Harmony/src) aplica con
+          Aqui se define un unico modelo base (portalBlock, gupFuturePortal1)
+          y se dejan "portalBlockActive" / "portalBlockActivePulseHigh" como
+          bloques alternativos que PortalVisualFX.cs (Harmony/src) aplica con
           World.SetBlockRPC() al vincularse/desvincularse el par y, para el
           pulso, alternando entre las dos variantes activas en cada ambient
-          tick (~0.6s). Ajusta "Model" abajo si tienes assets distintos.
+          tick (~0.6s). El modelo de la variante activa (gupFuturePortal6) se
+          define mas abajo, en el bloque "portalBlockActive".
       -->
-      <property name="PortalModel_Inactive" value="#PortalMod:Models/Prefabs/PortalFrame_Inactive.prefab" />
-      <property name="PortalModel_Active" value="#PortalMod:Models/Prefabs/PortalFrame_Active.prefab" />
 
       <!--
           LUZ (estado INACTIVO / huerfano): tenue, azul-grisacea, radio pequeno.
@@ -94,7 +103,12 @@
         PortalVisualFX.SetBlockState().
     -->
     <block name="portalBlockActive" extends="portalBlock">
-      <property name="Model" value="#PortalMod:Models/Prefabs/PortalFrame_Active.prefab" />
+      <!--
+          Modelo 3D del estado ACTIVO/vinculado: bundle gupFuturePortal6.unity3d.
+          TODO: verificar nombre exacto del prefab dentro del bundle (inspeccion
+          en Unity Editor); "NombrePrefab" es un placeholder literal.
+      -->
+      <property name="Model" value="#@modfolder:Resources/gupFuturePortal6.unity3d?NombrePrefab" />
       <property name="DescriptionKey" value="portalBlockActiveDesc" />
 
       <property name="LightColor" value="140,90,255" />
