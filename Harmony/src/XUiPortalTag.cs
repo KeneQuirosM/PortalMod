@@ -1,3 +1,6 @@
+using System;
+using System.Linq;
+using System.Reflection;
 using UnityEngine;
 
 namespace PortalMod
@@ -101,7 +104,56 @@ namespace PortalMod
                 controller._tagInput.Text = _pendingCurrentTag ?? string.Empty;
             }
 
-            xui.playerUI.windowManager.Open(WindowName, true, false, true);
+            OpenWindowGroupSafely(xui.playerUI.windowManager, WindowName);
+        }
+
+        /// <summary>
+        /// El compilador real (Assembly-CSharp.dll V3.0) reporto que
+        /// "Open(string, bool, bool, bool)" (4 argumentos) ya no existe en el
+        /// window manager, pero no se tuvo acceso al DLL para confirmar la
+        /// firma correcta (candidatos sin verificar: XUiWindowGroupManager.Open
+        /// / XUiManager.Open con distinta cantidad/orden de parametros).
+        /// En vez de adivinar una segunda firma a ciegas, se invoca "Open" por
+        /// reflection: se toma el primer metodo publico llamado "Open" cuyo
+        /// primer parametro sea un string (el nombre de la ventana), y se
+        /// completan los parametros restantes con sus valores por defecto
+        /// (o el default del tipo si no tienen uno). Esto compila
+        /// incondicionalmente y sigue funcionando aunque cambie la cantidad
+        /// exacta de argumentos.
+        /// TODO: reemplazar por una llamada directa en cuanto se confirme la
+        /// firma real (decompilar XUiWindowGroupManager con ILSpy/dnSpy).
+        /// </summary>
+        private static void OpenWindowGroupSafely(object windowManager, string windowName)
+        {
+            if (windowManager == null)
+            {
+                API.LogWarning($"windowManager es null; no se pudo abrir '{windowName}'.");
+                return;
+            }
+
+            var method = windowManager.GetType().GetMethods()
+                .FirstOrDefault(m => m.Name == "Open" &&
+                                      m.GetParameters().Length > 0 &&
+                                      m.GetParameters()[0].ParameterType == typeof(string));
+
+            if (method == null)
+            {
+                API.LogWarning($"No se encontro un metodo Open(string, ...) en {windowManager.GetType().Name}; no se pudo abrir '{windowName}'.");
+                return;
+            }
+
+            var parameters = method.GetParameters();
+            var args = new object[parameters.Length];
+            args[0] = windowName;
+            for (var i = 1; i < parameters.Length; i++)
+            {
+                var p = parameters[i];
+                args[i] = p.HasDefaultValue ? p.DefaultValue
+                    : p.ParameterType.IsValueType ? Activator.CreateInstance(p.ParameterType)
+                    : null;
+            }
+
+            method.Invoke(windowManager, args);
         }
 
         // Invocado desde el binding de eventos del boton "Confirmar" en
@@ -160,8 +212,23 @@ namespace PortalMod
         // ========================================================================
         // Binding V3.0: expone valores dinamicos a windows.xml via atributos
         // tipo value="{portaltag.title}" en lugar del binding por indice de A19.
+        //
+        // El compilador real confirmo que XUiController.GetBindingValue ya NO es
+        // virtual en V3.0 (CS0506/CS0115), asi que "override" no compila. Se usa
+        // "new" para poder seguir declarando un metodo con el mismo nombre.
+        // RIESGO FUNCIONAL: "new" oculta el metodo en vez de sobrescribirlo — si
+        // el sistema de binding interno de XUi invoca GetBindingValue a traves de
+        // una referencia tipada como "XUiController" (muy probable, ya que ese es
+        // el tipo generico que maneja el resolvedor de bindings), esa llamada
+        // ejecutara la implementacion BASE, no esta, y los bindings
+        // "portaltag.*" de abajo nunca se resolveran en tiempo real aunque el
+        // codigo compile. Verificar en el juego si el titulo/placeholder de la
+        // ventana se actualizan correctamente; si no, la propiedad tiene que
+        // exponerse por otro mecanismo (por ejemplo un ViewComponent/binding
+        // distinto, o revisando si XUiController expone un punto de extension
+        // diferente en V3.0 para esto).
         // ========================================================================
-        public override bool GetBindingValue(ref string value, string bindingName)
+        public new bool GetBindingValue(ref string value, string bindingName)
         {
             switch (bindingName)
             {

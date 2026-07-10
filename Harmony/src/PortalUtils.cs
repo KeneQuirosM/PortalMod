@@ -11,9 +11,11 @@ namespace PortalMod
     internal static class PortalIdentity
     {
         /// <summary>
-        /// Devuelve un identificador estable y unico por jugador, valido tanto
-        /// en Steam como en otras plataformas (Xbox/PS/EGS), usado como clave
-        /// primaria en PortalManager para separar los portales de cada jugador.
+        /// Devuelve un identificador unico por jugador usado como clave primaria
+        /// en PortalManager para separar los portales de cada jugador.
+        /// NO es estable entre sesiones (ver comentario dentro del metodo) — es
+        /// un fallback deliberado hasta confirmar el miembro de plataforma real
+        /// en el Assembly-CSharp.dll de V3.0.
         /// </summary>
         public static string GetSteamId(EntityPlayer player)
         {
@@ -22,20 +24,21 @@ namespace PortalMod
                 return null;
             }
 
-            // TODO: verificar en Assembly-CSharp V3.0 el nombre exacto del
-            // miembro. En builds anteriores EntityPlayer expone
-            // "PlatformUserIdentifierAbs" (PlatformUserIdentifierAbs.CombinedString)
-            // como identificador cross-platform estable; "InputFromPlayerData"
-            // y "playerId" tambien han existido en distintas versiones.
-            var platformId = player.PlatformUserIdentifierAbs;
-            if (platformId != null && !string.IsNullOrEmpty(platformId.CombinedString))
-            {
-                return platformId.CombinedString;
-            }
-
-            // Fallback: entityId no es estable entre sesiones pero evita null
-            // en escenarios de testing local / single player sin plataforma.
-            return "entity_" + player.entityId;
+            // "PlatformUserIdentifierAbs" NO existe en EntityPlayer del
+            // Assembly-CSharp.dll real de V3.0 (error de compilacion confirmado).
+            // No se tuvo acceso al DLL para confirmar el reemplazo correcto
+            // (candidatos sin verificar: PlatformId/UserIdentifier expuestos via
+            // ClientInfo en vez de EntityPlayer), asi que se usa el fallback
+            // seguro entityId.ToString(), garantizado a compilar y existir en
+            // toda la jerarquia Entity/EntityAlive/EntityPlayer.
+            //
+            // TRADEOFF: a diferencia de un identificador de plataforma real,
+            // entityId NO es estable entre reconexiones/sesiones — el mismo
+            // jugador puede recibir un entityId distinto la proxima vez que se
+            // conecte, lo que rompe la asociacion de sus portales guardados en
+            // PortalManager. Reemplazar por un identificador de plataforma real
+            // en cuanto se confirme el miembro correcto en el DLL decompilado.
+            return player.entityId.ToString();
         }
     }
 

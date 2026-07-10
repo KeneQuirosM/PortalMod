@@ -10,9 +10,11 @@ namespace PortalMod
     /// <summary>
     /// Nucleo del sistema de portales estilo Valheim: vinculacion bidireccional
     /// por tag compartida, sin jerarquia madre/hijo. Cada jugador (identificado
-    /// por su steamId / PlatformUserIdentifierAbs) gestiona su propio set de
-    /// portales de forma totalmente independiente al de los demas jugadores,
-    /// lo que hace que el sistema funcione correctamente en multijugador.
+    /// por "steamId" — en realidad EntityPlayer.entityId.ToString(), ver
+    /// PortalIdentity.GetSteamId en PortalUtils.cs; NO es estable entre
+    /// sesiones, ver TODO ahi) gestiona su propio set de portales de forma
+    /// totalmente independiente al de los demas jugadores, lo que hace que el
+    /// sistema funcione correctamente en multijugador.
     ///
     /// Estructura de datos principal:
     ///   steamId -> tag -> lista de posiciones (maximo 2 elementos == un par).

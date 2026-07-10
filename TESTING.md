@@ -138,6 +138,47 @@ juego real. Anotar el resultado real de cada uno al probar:
       controles del sistema de binding V3.0 (`XUiPortalTag.cs`,
       `windows.xml`).
 
+### 10.1 Errores de compilación reales corregidos (pendientes de verificar en runtime)
+
+Estos 6 errores salieron de compilar el DLL contra un `Assembly-CSharp.dll`
+real de V3.0 (no de este entorno de desarrollo). Se corrigieron para que
+compile, pero el comportamiento en juego de cada uno sigue sin probarse:
+
+- [x] `ModEvents.GameShutdown`/`ModEvents.GameUpdate` no aceptaban el
+      handler sin parámetros — **corregido** reemplazándolos por Harmony
+      patches sobre `GameManager.Update`/`GameManager.OnApplicationQuit`
+      (`API.cs`). Pendiente: confirmar que `GameManager` realmente expone
+      esos dos métodos con esos nombres exactos (si Harmony no los
+      encuentra, falla al cargar el mod con un error claro en el log).
+- [x] `EntityPlayer.PlatformUserIdentifierAbs` no existe — **corregido**
+      usando `player.entityId.ToString()` como identificador de jugador
+      (`PortalUtils.cs`). Pendiente: esto NO es estable entre
+      reconexiones/sesiones; probar qué pasa con los portales de un
+      jugador después de que se desconecta y se vuelve a conectar.
+- [x] `windowManager.Open(...)` con 4 argumentos no existe — **corregido**
+      invocando `Open` por reflection, probando el primer método `Open`
+      cuyo primer parámetro sea `string` (`XUiPortalTag.cs`). Pendiente:
+      confirmar que la ventana de nombrar/renombrar portal realmente abre
+      en pantalla.
+- [x] `GetBindingValue` no es virtual — **corregido** cambiando `override`
+      por `new` (`XUiPortalTag.cs`). Pendiente — **riesgo real**: con
+      `new`, si el resolvedor de bindings de XUi invoca el método a través
+      de una referencia tipada como `XUiController`, nuestra versión nunca
+      se ejecuta y el título/placeholder de la ventana no se actualizará.
+      Probar explícitamente que el texto de la ventana cambia entre "Nombrar
+      Portal" y "Renombrar Portal" según corresponda.
+- [x] `new BlockValue(int)` no compila, esperaba `uint` — **corregido**
+      con cast explícito `(uint)targetBlock.blockID` (`PortalVisualFX.cs`).
+- [x] `new ParticleEffect(string, Vector3)` no existe — **corregido**
+      construyendo el `ParticleEffect` por reflection (constructor de 2
+      argumentos si existe, si no constructor vacío + propiedades
+      Name/Position) y llamando a `SpawnParticleEffectServer` también por
+      reflection (`PortalVisualFX.cs`). Pendiente: confirmar que los
+      efectos de partícula realmente aparecen en el mundo; si la
+      reflection no encuentra un constructor/propiedades compatibles,
+      solo se registra un warning en el log y no pasa nada visualmente
+      (no debería romper el mod).
+
 ## 11. Pruebas de multijugador (si aplica)
 
 - [ ] Cada jugador gestiona sus propios portales por steamId

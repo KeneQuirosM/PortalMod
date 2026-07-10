@@ -29,7 +29,7 @@ namespace PortalMod
             API.Log("PortalTeleport inicializado.");
         }
 
-        /// <summary>Se invoca una vez por tick de juego desde API.OnGameUpdate.</summary>
+        /// <summary>Se invoca una vez por frame desde GameManager_Update_Patch (ver API.cs).</summary>
         public static void Tick()
         {
             var world = GameManager.Instance != null ? GameManager.Instance.World : null;

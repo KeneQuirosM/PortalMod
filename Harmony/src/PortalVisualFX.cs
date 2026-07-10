@@ -1,3 +1,6 @@
+using System;
+using System.Linq;
+using System.Reflection;
 using UnityEngine;
 
 namespace PortalMod
@@ -86,7 +89,9 @@ namespace PortalMod
                 return;
             }
 
-            var newBv = new BlockValue(targetBlock.blockID);
+            // El compilador real confirmo que BlockValue espera un uint, no un
+            // int como se asumia (targetBlock.blockID es int) — cast explicito.
+            var newBv = new BlockValue((uint)targetBlock.blockID);
             newBv.rotation = currentBv.rotation;
 
             // TODO: verificar en Assembly-CSharp V3.0 la firma exacta de
@@ -168,6 +173,22 @@ namespace PortalMod
             SpawnParticleServer("electricsparks_lightning_big", worldPos);
         }
 
+        /// <summary>
+        /// El compilador real (Assembly-CSharp.dll V3.0) confirmo que
+        /// ParticleEffect ya no tiene un constructor publico de 2 argumentos
+        /// (string, Vector3), pero no se tuvo acceso al DLL para determinar el
+        /// constructor/factory correcto. En vez de adivinar una segunda firma a
+        /// ciegas (como con "Open" en XUiPortalTag.cs), la construccion del
+        /// ParticleEffect y la llamada a SpawnParticleEffectServer se resuelven
+        /// por reflection: se prueba primero un constructor (string, Vector3);
+        /// si no existe, se prueba un constructor sin argumentos combinado con
+        /// propiedades/campos de nombre y posicion conocidos por convencion
+        /// (Name/ParticleName, Position/position). Si tampoco existe eso, se
+        /// registra un warning y no se dispara el efecto — nunca se lanza una
+        /// excepcion que pueda tumbar el mod por un efecto puramente cosmetico.
+        /// TODO: reemplazar por una llamada directa en cuanto se confirme el
+        /// constructor/metodo real (decompilar ParticleEffect con ILSpy/dnSpy).
+        /// </summary>
         private static void SpawnParticleServer(string particleName, Vector3 worldPos)
         {
             if (GameManager.Instance == null)
@@ -175,12 +196,94 @@ namespace PortalMod
                 return;
             }
 
-            // TODO: verificar en Assembly-CSharp V3.0 la firma exacta de
-            // GameManager.Instance.SpawnParticleEffectServer. Candidato de builds
-            // anteriores: SpawnParticleEffectServer(ParticleEffect _effect,
-            // int _entityId, bool _localOnly, bool _isEnvSpawner), donde
-            // ParticleEffect se construye como "new ParticleEffect(name, position)".
-            GameManager.Instance.SpawnParticleEffectServer(new ParticleEffect(particleName, worldPos), 0, false, false);
+            var effect = TryCreateParticleEffect(particleName, worldPos);
+            if (effect == null)
+            {
+                API.LogWarning($"No se pudo construir ParticleEffect para '{particleName}' (constructor/propiedades no confirmados en V3.0).");
+                return;
+            }
+
+            InvokeSpawnParticleEffectServer(effect);
+        }
+
+        private static object TryCreateParticleEffect(string particleName, Vector3 worldPos)
+        {
+            var type = typeof(ParticleEffect);
+
+            var twoArgCtor = type.GetConstructor(new[] { typeof(string), typeof(Vector3) });
+            if (twoArgCtor != null)
+            {
+                return twoArgCtor.Invoke(new object[] { particleName, worldPos });
+            }
+
+            var emptyCtor = type.GetConstructor(Type.EmptyTypes);
+            if (emptyCtor == null)
+            {
+                return null;
+            }
+
+            var instance = emptyCtor.Invoke(null);
+            if (!TrySetMember(instance, "Name", particleName))
+            {
+                TrySetMember(instance, "ParticleName", particleName);
+            }
+            if (!TrySetMember(instance, "Position", worldPos))
+            {
+                TrySetMember(instance, "position", worldPos);
+            }
+            return instance;
+        }
+
+        private static bool TrySetMember(object instance, string memberName, object value)
+        {
+            var type = instance.GetType();
+
+            var field = type.GetField(memberName);
+            if (field != null && field.FieldType.IsInstanceOfType(value))
+            {
+                field.SetValue(instance, value);
+                return true;
+            }
+
+            var prop = type.GetProperty(memberName);
+            if (prop != null && prop.CanWrite && prop.PropertyType.IsInstanceOfType(value))
+            {
+                prop.SetValue(instance, value);
+                return true;
+            }
+
+            return false;
+        }
+
+        private static void InvokeSpawnParticleEffectServer(object particleEffect)
+        {
+            var method = typeof(GameManager).GetMethods()
+                .Where(m => m.Name == "SpawnParticleEffectServer")
+                .OrderByDescending(m => m.GetParameters().Length)
+                .FirstOrDefault(m =>
+                {
+                    var ps = m.GetParameters();
+                    return ps.Length > 0 && ps[0].ParameterType.IsInstanceOfType(particleEffect);
+                });
+
+            if (method == null)
+            {
+                API.LogWarning("No se encontro un metodo SpawnParticleEffectServer compatible en GameManager.");
+                return;
+            }
+
+            var parameters = method.GetParameters();
+            var args = new object[parameters.Length];
+            args[0] = particleEffect;
+            for (var i = 1; i < parameters.Length; i++)
+            {
+                var p = parameters[i];
+                args[i] = p.HasDefaultValue ? p.DefaultValue
+                    : p.ParameterType.IsValueType ? Activator.CreateInstance(p.ParameterType)
+                    : null;
+            }
+
+            method.Invoke(GameManager.Instance, args);
         }
     }
 }
