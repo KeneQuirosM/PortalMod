@@ -1,9 +1,23 @@
 <configs>
   <!--
       buffs.xml — PortalMod
-      buffPortalTravel: aplicado al jugador al salir de un portal.
-      Congela el movimiento durante la transicion (2s) y dispara
-      efecto de particulas/sonido de salida.
+      buffPortalTravel: aplicado al jugador justo DESPUES de teletransportarlo
+      (ver PortalTeleport.ExecuteTeleport), es decir con el jugador ya parado
+      en el portal de DESTINO. Congela el movimiento durante la transicion
+      (2s) y dispara los efectos de "llegada": flash + particulas + sonido.
+
+      El efecto del portal de ORIGEN (donde ya no queda ningun jugador al que
+      atarle un buff) se dispara aparte, directamente desde C#, ver
+      PortalVisualFX.SpawnTeleportBurst() llamado en PortalTeleport.cs antes
+      Y despues del teletransporte (origen y destino respectivamente), como
+      refuerzo adicional a lo que ya hace este buff en el jugador.
+
+      Todos los nombres de particula/sonido usados abajo son PLACEHOLDERS
+      vanilla-plausibles (7 Days to Die no tiene un efecto "portal" nativo,
+      al no existir esa mecanica en el juego base). Estan marcados con TODO
+      para reemplazarlos por el nombre real una vez confirmado contra
+      Data/Config/sounds.xml (particulas) y el editor/AssetBundle del juego
+      (particulas) de tu instalacion V3.0.
   -->
   <append xpath="/buffs">
 
@@ -18,17 +32,28 @@
         <passive_effect name="JumpModifier" operation="perc_set" value="0" />
       </effect_group>
 
-      <!-- Efecto de salida: particulas + sonido al iniciar el buff (justo tras teletransportar) -->
-      <triggered_effect trigger="onSelfBuffStart" action="PlayParticleEffect" particle="teleportParticle" particle_scale="1" />
-      <triggered_effect trigger="onSelfBuffStart" action="PlaySound" sound="portal_teleport_out" />
-      <!-- TODO: verificar en Assembly-CSharp V3.0 si el sistema de buffs expone
-           particle bundles propios (BuffClass) o si se requiere disparar el efecto
-           manualmente desde PortalTeleport.cs via Manager.Instance / GameManager -->
+      <!--
+          LLEGADA (justo al aplicarse el buff, con el jugador ya en el
+          destino): flash brillante + rafaga de particulas "explosiva" +
+          sonido de impacto. particle_scale elevado a proposito para
+          "potenciar" el efecto de salida pedido.
+          TODO: verificar en Assembly-CSharp V3.0 si el sistema de buffs
+          expone particle bundles propios (BuffClass) o si esto debe
+          dispararse manualmente desde C# via GameManager (ver PortalVisualFX).
+      -->
+      <triggered_effect trigger="onSelfBuffStart" action="PlayParticleEffect" particle="electricsparks_lightning_big" particle_scale="1.6" />
+      <!-- TODO: candidato de "flash" de luz blanca/azul: reemplazar por el
+           particle real vanilla mas parecido a un destello brillante
+           (buscar algo tipo "explosion_flash"/"muzzleflash_big" en el
+           listado de particulas del juego). -->
+      <triggered_effect trigger="onSelfBuffStart" action="PlayParticleEffect" particle="explosion_flash_todo" particle_scale="1.2" />
+      <triggered_effect trigger="onSelfBuffStart" action="PlaySound" sound="electric_sparks_zap" />
 
-      <triggered_effect trigger="onSelfBuffUpdate" action="PlayParticleEffect" particle="teleportParticleLoop" particle_scale="1" />
+      <!-- Durante la transicion (2s): particulas de energia mas sutiles en loop -->
+      <triggered_effect trigger="onSelfBuffUpdate" action="PlayParticleEffect" particle="electricsparks_lightning" particle_scale="1" />
 
-      <!-- Restaura velocidad automaticamente al expirar el buff (duration=2s) -->
-      <triggered_effect trigger="onSelfBuffRemove" action="PlaySound" sound="portal_teleport_end" />
+      <!-- Al finalizar (expira a los 2s, restaura velocidad automaticamente): sonido de cierre -->
+      <triggered_effect trigger="onSelfBuffRemove" action="PlaySound" sound="electric_sparks_zap_end" />
 
     </buff>
 

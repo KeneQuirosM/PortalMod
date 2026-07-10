@@ -38,6 +38,10 @@ namespace PortalMod
                 return;
             }
 
+            // Pulso de luz + particulas ambientales de todos los portales
+            // conocidos (auto-throttleado internamente, ver PortalVisualFX).
+            PortalVisualFX.AmbientTick();
+
             // TODO: verificar en Assembly-CSharp V3.0 el metodo correcto para
             // enumerar jugadores activos en el server/host. Candidatos conocidos
             // en builds anteriores: World.Players.list, World.GetPlayers(),
@@ -112,11 +116,16 @@ namespace PortalMod
                 return;
             }
 
-            ExecuteTeleport(player, steamId, destinationBlockPos);
+            ExecuteTeleport(player, steamId, originPos, destinationBlockPos);
         }
 
-        private static void ExecuteTeleport(EntityPlayer player, string steamId, Vector3i destinationBlockPos)
+        private static void ExecuteTeleport(EntityPlayer player, string steamId, Vector3i originBlockPos, Vector3i destinationBlockPos)
         {
+            // Flash + rafaga de particulas en el portal de ORIGEN, antes de mover
+            // al jugador: una vez teletransportado ya no queda nadie ahi para
+            // disparar el efecto via buff, asi que se hace explicitamente aqui.
+            PortalVisualFX.SpawnTeleportBurst(originBlockPos);
+
             // Centrar al jugador frente al portal destino, con un pequeno offset
             // vertical para no aparecer incrustado en el bloque.
             var destination = new Vector3(destinationBlockPos.x + 0.5f, destinationBlockPos.y + 0.1f, destinationBlockPos.z + 0.5f);
@@ -131,6 +140,12 @@ namespace PortalMod
             // desde builds tempranas; en dedicado puede requerir enviar tambien
             // un NetPackage al cliente para sincronizar camara/posicion visual.
             player.SetPosition(destination, true);
+
+            // Rafaga de particulas en el DESTINO, ademas de la que dispara
+            // buffPortalTravel (onSelfBuffStart en buffs.xml) al aplicarse el
+            // buff justo debajo: refuerza el "efecto explosivo breve" pedido
+            // tanto en origen como en destino.
+            PortalVisualFX.SpawnTeleportBurst(destinationBlockPos);
 
             PortalManager.Instance.SetCooldown(steamId);
             ApplyTravelBuff(player);

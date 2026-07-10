@@ -44,20 +44,40 @@
       <property name="HitMaskAll" value="0" />
 
       <!--
-          ESTADOS VISUALES (inactivo / activo):
+          ESTADOS VISUALES (inactivo / activo / pulso):
           El sistema de bloques V3.0 permite variantes visuales via
           "Meta"/"Variant" property combinado con BlockActivationCommand,
           o via un segundo bloque enlazado (downgrade/upgrade block) que se
           intercambia en runtime mediante World.SetBlockRPC cuando
           PortalManager detecta que el par fue encontrado.
 
-          Aqui se define un unico modelo base (portalBlock) y se deja
-          "PortalBlockActive" como bloque alternativo que PortalBlockPatch.cs
-          puede aplicar con World.SetBlockRPC() al vincularse el par.
-          Ajusta "Model" abajo si tienes assets distintos para el estado activo.
+          Aqui se define un unico modelo base (portalBlock) y se dejan
+          "portalBlockActive" / "portalBlockActivePulseHigh" como bloques
+          alternativos que PortalVisualFX.cs (Harmony/src) aplica con
+          World.SetBlockRPC() al vincularse/desvincularse el par y, para el
+          pulso, alternando entre las dos variantes activas en cada ambient
+          tick (~0.6s). Ajusta "Model" abajo si tienes assets distintos.
       -->
       <property name="PortalModel_Inactive" value="#PortalMod:Models/Prefabs/PortalFrame_Inactive.prefab" />
       <property name="PortalModel_Active" value="#PortalMod:Models/Prefabs/PortalFrame_Active.prefab" />
+
+      <!--
+          LUZ (estado INACTIVO / huerfano): tenue, azul-grisacea, radio pequeno.
+          LightColor / LightIntensity / LightRadius son propiedades de bloque
+          vanilla usadas por antorchas, lamparas y hornos en 7 Days to Die;
+          controlan la luz que EMITE el bloque. "LightOpacity" (mencionada por
+          el usuario) es una propiedad vanilla distinta: controla cuanta luz
+          AJENA bloquea este bloque al proyectar sombras, no cuanta luz emite
+          el propio bloque — se deja en 0 para que el portal no proyecte
+          sombra dura sobre su propia luz.
+          TODO: verificar en Assembly-CSharp V3.0 / blocks.xml vanilla (p.ej.
+          "torchWall", "lanternBase01") los nombres exactos y rangos validos
+          de estas propiedades; los valores de abajo son de partida.
+      -->
+      <property name="LightColor" value="140,160,180" />
+      <property name="LightIntensity" value="0.35" />
+      <property name="LightRadius" value="2" />
+      <property name="LightOpacity" value="0" />
 
       <drop event="Destroy" name="portalBlockItem" count="1" prob="1" />
       <drop event="Harvest" name="scrapIron" count="4,8" tool_category="Disassemble" />
@@ -67,13 +87,35 @@
     </block>
 
     <!--
-        Variante "activa" opcional del bloque (mismo modelo base, distinta malla/efecto).
-        Se usa unicamente como referencia visual — el estado real (huerfano/vinculado)
-        siempre vive en PortalManager, esto es solo cosmetico.
+        Variante "ACTIVA" (par vinculado, fase BAJA del pulso): mismo modelo
+        base, luz azul-violeta mas intensa y de mayor radio que el estado
+        inactivo. El estado real (huerfano/vinculado) siempre vive en
+        PortalManager — este bloque es puramente cosmetico y es aplicado por
+        PortalVisualFX.SetBlockState().
     -->
     <block name="portalBlockActive" extends="portalBlock">
       <property name="Model" value="#PortalMod:Models/Prefabs/PortalFrame_Active.prefab" />
       <property name="DescriptionKey" value="portalBlockActiveDesc" />
+
+      <property name="LightColor" value="140,90,255" />
+      <property name="LightIntensity" value="0.85" />
+      <property name="LightRadius" value="4" />
+    </block>
+
+    <!--
+        Variante "ACTIVA, fase ALTA del pulso": identica a portalBlockActive
+        salvo LightIntensity/LightRadius ligeramente mayores. PortalVisualFX
+        alterna portalBlockActive <-> portalBlockActivePulseHigh cada ~0.6s
+        mientras el par siga vinculado, simulando el "leve pulso/parpadeo"
+        sin depender de una propiedad de flicker nativa (no confirmada).
+        TODO: si V3.0 expone una propiedad de parpadeo nativo en el bloque
+        (candidatos: "LightFlicker", "LightRandomness", o un "LightTemplate"
+        tipo "Torch"/"Candle"), se puede usar directamente sobre
+        portalBlockActive y eliminar esta variante + el toggle en C#.
+    -->
+    <block name="portalBlockActivePulseHigh" extends="portalBlockActive">
+      <property name="LightIntensity" value="1.15" />
+      <property name="LightRadius" value="4.5" />
     </block>
 
   </append>

@@ -117,7 +117,23 @@ namespace PortalMod
 
             API.Log($"Portal registrado: steamId={steamId} tag='{tag}' pos={pos} (par actual: {positions.Count}/2)");
 
-            return positions.Count == MaxPortalsPerTag ? RegisterResult.Success : RegisterResult.SuccessOrphan;
+            if (positions.Count == MaxPortalsPerTag)
+            {
+                // Par completo: activar el estado visual (luz+particulas
+                // intensas) en AMBOS portales del par, no solo en el recien colocado.
+                foreach (var p in positions)
+                {
+                    PortalVisualFX.SetBlockState(p, PortalVisualFX.BlockState.Active);
+                }
+
+                return RegisterResult.Success;
+            }
+
+            // Portal huerfano: asegurar que quede en estado visual inactivo
+            // (relevante sobre todo al renombrar, donde el bloque pudo venir de
+            // un estado activo previo).
+            PortalVisualFX.SetBlockState(pos, PortalVisualFX.BlockState.Inactive);
+            return RegisterResult.SuccessOrphan;
         }
 
         /// <summary>
@@ -134,7 +150,15 @@ namespace PortalMod
             if (_portals.TryGetValue(portalRef.SteamId, out var tagMap) &&
                 tagMap.TryGetValue(portalRef.Tag, out var positions))
             {
+                var wasActivePair = positions.Count == MaxPortalsPerTag;
                 positions.RemoveAll(p => p.Equals(pos));
+
+                if (wasActivePair && positions.Count == 1)
+                {
+                    // El par se rompio: el portal restante queda huerfano y
+                    // debe volver al estado visual inactivo.
+                    PortalVisualFX.SetBlockState(positions[0], PortalVisualFX.BlockState.Inactive);
+                }
 
                 if (positions.Count == 0)
                 {
@@ -253,6 +277,23 @@ namespace PortalMod
             return _portals.TryGetValue(steamId, out var tagMap) &&
                    tagMap.TryGetValue(tag, out var positions) &&
                    positions.Count < MaxPortalsPerTag;
+        }
+
+        /// <summary>
+        /// True si la posicion dada pertenece a un par de portales completo
+        /// (vinculado). Usado por PortalVisualFX para decidir el estado visual
+        /// (luz/particulas) a aplicar en cada ambient tick.
+        /// </summary>
+        public bool IsPositionActive(Vector3i pos)
+        {
+            if (!_positionLookup.TryGetValue(pos, out var portalRef))
+            {
+                return false;
+            }
+
+            return _portals.TryGetValue(portalRef.SteamId, out var tagMap) &&
+                   tagMap.TryGetValue(portalRef.Tag, out var positions) &&
+                   positions.Count == MaxPortalsPerTag;
         }
 
         // ========================================================================
