@@ -133,8 +133,15 @@ juego real. Anotar el resultado real de cada uno al probar:
       reales de `BlockPlacement.Result` más allá de `blockPos` siguen sin
       confirmar, y sin `__result` ya no se puede distinguir si la colocación
       fue realmente aceptada — ver TODO en `Block_OnBlockPlaceBefore_Patch`.
-- [ ] Confirmar firmas exactas de `Block.OnBlockActivated` y
-      `Block.OnBlockRemoved` (`PortalBlockPatch.cs`).
+- [x] Confirmar que `Block.OnBlockActivated` tiene múltiples sobrecargas en
+      V3.0 — **confirmado** por `AmbiguousMatchException` al cargar el mod
+      (ver 10.1 más abajo); el patch ahora especifica explícitamente la
+      sobrecarga `(WorldBase, Vector3i, BlockValue, EntityAlive)`. Pendiente:
+      esa sobrecarga específica (nombres/orden exacto de parámetros más allá
+      de los tipos) sigue sin confirmarse contra el DLL real — si Harmony no
+      encuentra un método con esos 4 tipos exactos, fallará con "no method
+      found" en vez de la ambigüedad anterior.
+- [ ] Confirmar firma exacta de `Block.OnBlockRemoved` (`PortalBlockPatch.cs`).
 - [ ] Confirmar método correcto de teletransporte de `EntityPlayer` en
       servidor dedicado (`PortalTeleport.cs`, actualmente usa
       `player.SetPosition`).
@@ -144,11 +151,12 @@ juego real. Anotar el resultado real de cada uno al probar:
       controles del sistema de binding V3.0 (`XUiPortalTag.cs`,
       `windows.xml`).
 
-### 10.1 Errores de compilación reales corregidos (pendientes de verificar en runtime)
+### 10.1 Errores reales corregidos (compilación y carga del mod)
 
-Estos 6 errores salieron de compilar el DLL contra un `Assembly-CSharp.dll`
-real de V3.0 (no de este entorno de desarrollo). Se corrigieron para que
-compile, pero el comportamiento en juego de cada uno sigue sin probarse:
+Estos errores salieron de compilar y cargar el DLL contra un
+`Assembly-CSharp.dll` real de V3.0 (no de este entorno de desarrollo). Se
+corrigieron para que compile/cargue, pero el comportamiento en juego de
+cada uno sigue sin probarse:
 
 - [x] `ModEvents.GameShutdown`/`ModEvents.GameUpdate` no aceptaban el
       handler sin parámetros — **corregido** reemplazándolos por Harmony
@@ -184,6 +192,16 @@ compile, pero el comportamiento en juego de cada uno sigue sin probarse:
       reflection no encuentra un constructor/propiedades compatibles,
       solo se registra un warning en el log y no pasa nada visualmente
       (no debería romper el mod).
+- [x] `Block.OnBlockPlaceBefore` es `void`, no `bool` — **corregido**,
+      ver ítem dedicado en la lista principal de esta sección (10) arriba.
+- [x] `AmbiguousMatchException` al cargar el mod: `Block.OnBlockActivated`
+      tiene varias sobrecargas y el patch no especificaba cuál — **corregido**
+      agregando los tipos explícitos `(WorldBase, Vector3i, BlockValue,
+      EntityAlive)` al atributo `[HarmonyPatch(...)]` de
+      `Block_OnBlockActivated_Patch` (`PortalBlockPatch.cs`). Pendiente:
+      confirmar que esos 4 tipos, en ese orden, realmente coinciden con una
+      sobrecarga real — si no, el error cambiará de "ambiguo" a "método no
+      encontrado", igual de ruidoso en el log al cargar el mod.
 
 ## 11. Pruebas de multijugador (si aplica)
 
