@@ -115,7 +115,46 @@ namespace PortalMod
             // XUiManager del jugador local. Camino historico:
             //   localPlayer.PlayerUI.xui.GetWindow(WindowName)
             var xui = localPlayer.PlayerUI?.xui;
-            var window = xui?.GetWindow(WindowName);
+            if (xui == null)
+            {
+                API.LogWarning("localPlayer.PlayerUI.xui es null; no se pudo abrir 'windowPortalTag'.");
+                return;
+            }
+
+            // FIX real (problema de timing confirmado con reflection contra
+            // Assembly-CSharp.dll real, XUi.loadAsync): "Parsing all window
+            // groups completed" en el log NO significa que XUi ya termino de
+            // inicializarse — ese mensaje se loguea DESPUES de parsear el XML
+            // pero ANTES de llamar Init() en cada XUiWindowGroup (un bucle
+            // que puede abarcar varios frames, con "yield return null" entre
+            // grupos). Recien al terminar ese bucle completo XUi pone
+            // IsReady=true, y el setter de IsReady dispara OnBuilt (un
+            // System.Action, confirmado por reflection) exactamente una vez
+            // en ese momento. Si un jugador coloca/activa un portalBlock
+            // antes de eso, GetWindow(WindowName) puede devolver null aunque
+            // la ventana SI este definida en windows.xml. En vez de fallar
+            // ahi, si xui.IsReady es false nos suscribimos a OnBuilt y
+            // reintentamos la apertura real cuando XUi avise que ya esta listo.
+            if (xui.IsReady)
+            {
+                OpenWindowNow(xui);
+            }
+            else
+            {
+                API.Log("XUi todavia no esta listo (IsReady=false); esperando XUi.OnBuilt para abrir 'windowPortalTag'.");
+                xui.OnBuilt += OnXuiBuilt;
+
+                void OnXuiBuilt()
+                {
+                    xui.OnBuilt -= OnXuiBuilt;
+                    OpenWindowNow(xui);
+                }
+            }
+        }
+
+        private static void OpenWindowNow(XUi xui)
+        {
+            var window = xui.GetWindow(WindowName);
             if (window == null)
             {
                 API.LogWarning($"No se encontro la ventana XUi '{WindowName}'. Revisa UIFrames/XUi_InGame/windows.xml.");
@@ -180,8 +219,8 @@ namespace PortalMod
             method.Invoke(windowManager, args);
         }
 
-        // Invocado desde el binding de eventos del boton "Confirmar" en
-        // windows.xml (ver <button ... controller="xuiPortalTag" onpress="Confirm" />).
+        // Invocado desde el boton "confirmButton" (<simplebutton> en
+        // windows.xml) via el OnPress conectado en Init() de esta clase.
         public void Confirm()
         {
             var tag = _tagInput != null ? _tagInput.Text?.Trim() : null;
@@ -222,7 +261,7 @@ namespace PortalMod
             CloseWindow();
         }
 
-        // Invocado desde el binding de eventos del boton "Cancelar".
+        // Invocado desde el boton "cancelButton" via el OnPress conectado en Init().
         public void Cancel()
         {
             CloseWindow();
