@@ -1,10 +1,23 @@
-<xml>
+<configs>
   <!--
       windows.xml — PortalMod
       Carpeta: UIFrames/XUi_InGame/  (NO "XUi", ese nombre quedo deprecado
       antes de V1.0). En V3.0 la visibilidad de ventanas/controles se maneja
       con el atributo "visible" (bindeable, ej. visible="{portaltag.isopen}")
       en lugar del antiguo "force_hide" de builds pre-A20.
+
+      FIX real (windowPortalTag no se encontraba en tiempo de ejecucion):
+      el root de este archivo era "<xml>...</xml>", pero TODOS los archivos
+      de patch de mod en V3.0 (incluidos los de XUi_InGame, no solo
+      blocks/buffs/items/recipes) usan el mismo envoltorio de parcheo
+      "<configs><append xpath="...">...</append></configs>", sin importar
+      cual sea el root real del archivo base (aqui "<windows>", confirmado
+      contra Data/Config/XUi_InGame/windows.xml vanilla). Con el root
+      "<xml>" incorrecto, XmlPatcher nunca aplicaba este append sobre
+      "XUi_InGame/windows" y la ventana jamas quedaba registrada en la
+      lista interna de XUi (ver XUi.GetWindow, que solo busca en esa
+      lista) — de ahi el warning "No se encontro la ventana XUi
+      'windowPortalTag'" en XUiPortalTag.OpenWindow.
 
       Esta ventana es un popup simple de 400x180 usado tanto para asignar el
       tag inicial de un portalBlock recien colocado como para renombrar uno
@@ -19,39 +32,41 @@
       ventanas nativas como "windowRadialOptions" o "windowMessageBox";
       usalas como referencia si tu build difiere de lo aqui asumido.
   -->
-  <window name="windowPortalTag" controller="XUiPortalTag" openTime="0.1" closeTime="0.1"
-          anchor="MiddleCenter" cursor_area="true">
+  <append xpath="/windows">
+    <window name="windowPortalTag" controller="XUiPortalTag" openTime="0.1" closeTime="0.1"
+            anchor="MiddleCenter" cursor_area="true">
 
-    <rect name="main" w="400" h="180" pos="0,0" anchor="MiddleCenter">
+      <rect name="main" w="400" h="180" pos="0,0" anchor="MiddleCenter">
 
-      <sprite name="bg" sprite_name="ui_game_symbol_bg" depth="1" width="400" height="180"
-              color="20,20,25,235" />
+        <sprite name="bg" sprite_name="ui_game_symbol_bg" depth="1" width="400" height="180"
+                color="20,20,25,235" />
 
-      <!-- Titulo: "Nombrar Portal" o "Renombrar Portal" segun el modo, resuelto en XUiPortalTag.GetBindingValue -->
-      <label name="title" pos="20,-16" width="360" height="30"
-             text="{portaltag.title}" font="ui_body_bold" font_size="22"
-             color="255,255,255,255" align="Center" depth="0" />
+        <!-- Titulo: "Nombrar Portal" o "Renombrar Portal" segun el modo, resuelto en XUiPortalTag.GetBindingValue -->
+        <label name="title" pos="20,-16" width="360" height="30"
+               text="{portaltag.title}" font="ui_body_bold" font_size="22"
+               color="255,255,255,255" align="Center" depth="0" />
 
-      <!-- Campo de texto para el tag del portal -->
-      <textinput name="portalTagInput" pos="30,-64" width="340" height="40"
-                  placeholder_key="xuiPortalTagPlaceholder"
-                  max_char_count="32" font_size="20"
-                  backgroundcolor="0,0,0,180" bordercolor="120,200,255,255"
-                  selected_on_show="true" depth="0" />
+        <!-- Campo de texto para el tag del portal -->
+        <textinput name="portalTagInput" pos="30,-64" width="340" height="40"
+                    placeholder_key="xuiPortalTagPlaceholder"
+                    max_char_count="32" font_size="20"
+                    backgroundcolor="0,0,0,180" bordercolor="120,200,255,255"
+                    selected_on_show="true" depth="0" />
 
-      <!-- Botones: Confirmar / Cancelar. Usan el binding de eventos V3.0 con
-           "controller" apuntando al XUiPortalTag y "onpress" al metodo publico. -->
-      <button name="confirmButton" pos="30,-124" width="160" height="40"
-              label="{portaltag.confirmlabel}" style="menu"
-              controller="XUiPortalTag" onpress="Confirm"
-              depth="0" />
+        <!-- Botones: Confirmar / Cancelar. Usan el binding de eventos V3.0 con
+             "controller" apuntando al XUiPortalTag y "onpress" al metodo publico. -->
+        <button name="confirmButton" pos="30,-124" width="160" height="40"
+                label="{portaltag.confirmlabel}" style="menu"
+                controller="XUiPortalTag" onpress="Confirm"
+                depth="0" />
 
-      <button name="cancelButton" pos="210,-124" width="160" height="40"
-              label="{portaltag.cancellabel}" style="menu_secondary"
-              controller="XUiPortalTag" onpress="Cancel"
-              depth="0" />
+        <button name="cancelButton" pos="210,-124" width="160" height="40"
+                label="{portaltag.cancellabel}" style="menu_secondary"
+                controller="XUiPortalTag" onpress="Cancel"
+                depth="0" />
 
-    </rect>
+      </rect>
 
-  </window>
-</xml>
+    </window>
+  </append>
+</configs>

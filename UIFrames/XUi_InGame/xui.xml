@@ -1,0 +1,22 @@
+<configs>
+  <!--
+      xui.xml — PortalMod
+      Carpeta: UIFrames/XUi_InGame/. Este archivo NO existia en el mod, y
+      es necesario ademas de windows.xml: en V3.0, XUi.SetXmlsForUi carga
+      en orden "XUi_InGame/windows" y luego "XUi_InGame/xui" (confirmado
+      decompilando Assembly-CSharp.dll real). windows.xml define la ventana
+      en si (ver ahi el fix del root "<configs><append xpath="/windows">"),
+      pero cada ventana que se abre por nombre via el window manager
+      (xui.playerUI.windowManager.Open(...), ver XUiPortalTag.OpenWindow)
+      tambien necesita estar agrupada en un "window_group" dentro de
+      xui.xml — mismo patron que usan popups vanilla simples sin controller
+      propio (ej. "tipWindow" -> "windowTip", ver Data/Config/XUi_InGame/
+      xui.xml). Se usa el mismo nombre para el grupo y la ventana porque
+      XUiPortalTag.OpenWindow llama a Open(...) con "windowPortalTag".
+  -->
+  <append xpath="/xui">
+    <window_group name="windowPortalTag" defaultselected="portalTagInput">
+      <window name="windowPortalTag" />
+    </window_group>
+  </append>
+</configs>
