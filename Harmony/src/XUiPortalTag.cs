@@ -24,6 +24,8 @@ namespace PortalMod
     {
         private const string WindowName = "windowPortalTag";
         private const string TextInputId = "portalTagInput";
+        private const string ConfirmButtonId = "confirmButton";
+        private const string CancelButtonId = "cancelButton";
 
         private enum Mode
         {
@@ -48,10 +50,32 @@ namespace PortalMod
         {
             base.Init();
 
-            // TODO: verificar en Assembly-CSharp V3.0 el tipo concreto del
-            // control de texto en XUi (XUiC_TextInput es el nombre historico;
-            // en V3.0 podria haberse renombrado dentro del namespace XUi).
+            // XUiC_TextInput confirmado por reflection contra el
+            // Assembly-CSharp.dll real como la clase controller real para el
+            // tag <textfield> de windows.xml (unico tipo que matchea
+            // "TextField"/"TextInput" en todo el ensamblado).
             _tagInput = GetChildById(TextInputId) as XUiC_TextInput;
+
+            // Conecta los botones <simplebutton> de windows.xml (ver FIX real
+            // #2 documentado ahi) a Confirm()/Cancel(). Confirmado por
+            // reflection contra Assembly-CSharp.dll real:
+            //   - GetChildById(string) NO es generico (devuelve XUiController
+            //     base) — el cast "as XUiC_SimpleButton" de abajo es
+            //     obligatorio, "GetChildById<T>(...)" no existe.
+            //   - XUiC_SimpleButton.OnPress es un
+            //     XUiEvent_OnPressEventHandler: void(XUiController _sender,
+            //     int _mouseButton).
+            var confirmBtn = GetChildById(ConfirmButtonId) as XUiC_SimpleButton;
+            if (confirmBtn != null)
+            {
+                confirmBtn.OnPress += (_sender, _mouseButton) => Confirm();
+            }
+
+            var cancelBtn = GetChildById(CancelButtonId) as XUiC_SimpleButton;
+            if (cancelBtn != null)
+            {
+                cancelBtn.OnPress += (_sender, _mouseButton) => Cancel();
+            }
         }
 
         /// <summary>Abre la ventana para asignar tag a un portal recien colocado.</summary>

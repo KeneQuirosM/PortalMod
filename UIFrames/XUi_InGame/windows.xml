@@ -35,11 +35,9 @@
           <simplebutton caption_key="..." />, usado tal cual (sin
           "controller" ni "onpress") en decenas de ventanas vanilla — el
           click se conecta desde C# (XUiController.GetChildById + su
-          evento OnPress), no declarativamente en XML. TODO: XUiPortalTag.cs
-          necesita conectar OnPress de "confirmButton"/"cancelButton" a
-          Confirm()/Cancel() en Init() (ver XUiController.Pressed/OnPress,
-          confirmado por reflection); ahora mismo esos botones se ven pero
-          no disparan nada todavia.
+          evento OnPress), no declarativamente en XML. Ya conectado en
+          XUiPortalTag.Init() (GetChildById("confirmButton"/"cancelButton")
+          as XUiC_SimpleButton, suscribiendo OnPress a Confirm()/Cancel()).
 
       Esta ventana es un popup simple de 400x190 usado tanto para asignar el
       tag inicial de un portalBlock recien colocado como para renombrar uno
