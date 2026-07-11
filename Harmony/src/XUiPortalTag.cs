@@ -43,10 +43,12 @@ namespace PortalMod
         private static string _pendingCurrentTag;
 
         private XUiC_TextInput _tagInput;
+        private bool _buttonsWired;
 
         public override void Init()
         {
             base.Init();
+            API.Log("[PortalMod] XUiPortalTag.Init() llamado");
 
             // XUiC_TextInput confirmado por reflection contra el
             // Assembly-CSharp.dll real como la clase controller real para el
@@ -54,9 +56,33 @@ namespace PortalMod
             // "TextField"/"TextInput" en todo el ensamblado).
             _tagInput = GetChildById(TextInputId) as XUiC_TextInput;
 
-            // Conecta los botones <simplebutton> de windows.xml (ver FIX real
-            // #2 documentado ahi) a Confirm()/Cancel(). Confirmado por
-            // reflection contra Assembly-CSharp.dll real:
+            WireButtons();
+        }
+
+        // FIX real (Confirm() nunca se ejecutaba): decompilando
+        // XUiController.Init() se confirmo que es virtual void Init(), y que
+        // la propia base.Init() ya recorre "children" e invoca Init() en cada
+        // hijo — por diseño, cuando esta clase llama a base.Init() los hijos
+        // directos YA deberian existir (se registran solos via el setter de
+        // "Parent", que hace parent.children.Add(this), durante el parseo
+        // recursivo de windows.xml, ANTES de que XUi llame a ningun Init()).
+        // No existe "CreateChildren()" en XUiController (confirmado por
+        // reflection: solo "Init" y "OnOpen" son puntos de extension
+        // reales). Aun asi, para blindarse contra cualquier caso en que
+        // Init() corriera antes de que los botones (expandidos desde el
+        // template <simplebutton> de XUi_Common/templates.xml) esten
+        // listos, se reintenta la conexion en OnOpen() — que se dispara
+        // recien cuando la ventana se muestra de verdad, momento en el que
+        // el arbol completo ya esta garantizado. _buttonsWired evita
+        // suscribir el evento OnPress dos veces si Init() ya funciono bien.
+        private void WireButtons()
+        {
+            if (_buttonsWired)
+            {
+                return;
+            }
+
+            // Confirmado por reflection contra Assembly-CSharp.dll real:
             //   - GetChildById(string) NO es generico (devuelve XUiController
             //     base) — el cast "as XUiC_SimpleButton" de abajo es
             //     obligatorio, "GetChildById<T>(...)" no existe.
@@ -64,16 +90,27 @@ namespace PortalMod
             //     XUiEvent_OnPressEventHandler: void(XUiController _sender,
             //     int _mouseButton).
             var confirmBtn = GetChildById(ConfirmButtonId) as XUiC_SimpleButton;
-            if (confirmBtn != null)
-            {
-                confirmBtn.OnPress += (_sender, _mouseButton) => Confirm();
-            }
+            API.Log("[PortalMod] confirmButton encontrado: " + (confirmBtn != null));
 
             var cancelBtn = GetChildById(CancelButtonId) as XUiC_SimpleButton;
-            if (cancelBtn != null)
+            API.Log("[PortalMod] cancelButton encontrado: " + (cancelBtn != null));
+
+            if (confirmBtn == null || cancelBtn == null)
             {
-                cancelBtn.OnPress += (_sender, _mouseButton) => Cancel();
+                // Todavia no existen (por ejemplo si esto corrio desde
+                // Init()); se reintenta en OnOpen().
+                return;
             }
+
+            confirmBtn.OnPress += (_sender, _mouseButton) => Confirm();
+            cancelBtn.OnPress += (_sender, _mouseButton) => Cancel();
+            _buttonsWired = true;
+        }
+
+        public override void OnOpen()
+        {
+            base.OnOpen();
+            WireButtons();
         }
 
         /// <summary>Abre la ventana para asignar tag a un portal recien colocado.</summary>
@@ -190,7 +227,7 @@ namespace PortalMod
         }
 
         // Invocado desde el boton "confirmButton" (<simplebutton> en
-        // windows.xml) via el OnPress conectado en Init() de esta clase.
+        // windows.xml) via el OnPress conectado en WireButtons().
         public void Confirm()
         {
             var tag = _tagInput != null ? _tagInput.Text?.Trim() : null;
@@ -231,7 +268,7 @@ namespace PortalMod
             CloseWindow();
         }
 
-        // Invocado desde el boton "cancelButton" via el OnPress conectado en Init().
+        // Invocado desde el boton "cancelButton" via el OnPress conectado en WireButtons().
         public void Cancel()
         {
             CloseWindow();
