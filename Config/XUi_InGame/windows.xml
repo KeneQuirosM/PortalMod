@@ -57,10 +57,34 @@
       resuelve los bindings de texto segun corresponda). Estructura calcada
       de "windowKeypadEdit" (popup pequeno con textfield + dos botones) y
       "windowTip" (header con icono + titulo bindeable).
+
+      FIX real (controller): decompilando XUiFromXml.parseController y
+      ReflectionHelpers.GetTypeWithPrefix contra el Assembly-CSharp.dll
+      real se confirmo que el atributo "controller" se resuelve asi:
+        1. Primer intento: Type.GetType("XUiC_" + controller) — por eso
+           los controllers VANILLA en XML nunca llevan el prefijo
+           "XUiC_" ni namespace (ej. controller="TipWindow" resuelve la
+           clase real "XUiC_TipWindow").
+        2. Si falla, fallback: Type.GetType(controller) tal cual, SIN
+           agregar prefijo.
+      Type.GetType(string) sin calificar de ensamblado solo busca en el
+      ensamblado que hace la llamada (Assembly-CSharp) y mscorlib — NUNCA
+      en otro ensamblado como PortalMod.dll, sin importar el prefijo. Por
+      eso controller="XUiPortalTag" nunca podia resolver nuestra clase
+      real (namespace "PortalMod", ensamblado "PortalMod.dll"): ni
+      "XUiC_XUiPortalTag" ni "XUiPortalTag" existen en Assembly-CSharp ni
+      en mscorlib. La forma correcta de que el intento 2 (fallback, SIN
+      modificar el string) encuentre un tipo en OTRO ensamblado es un
+      nombre de tipo calificado por ensamblado: "Namespace.Clase,
+      NombreDelEnsamblado" — asi Type.GetType() busca en TODOS los
+      ensamblados cargados, no solo en el que hace la llamada. Se usa
+      "PortalMod.XUiPortalTag, PortalMod" (namespace real confirmado en
+      Harmony/src/XUiPortalTag.cs; "PortalMod" es el AssemblyName real,
+      ver Harmony/PortalMod.csproj.template).
   -->
   <append xpath="/windows">
     <window name="windowPortalTag" pos="-200,95" width="400" height="190" anchor="Center"
-            controller="XUiPortalTag" cursor_area="true">
+            controller="PortalMod.XUiPortalTag, PortalMod" cursor_area="true">
 
       <rect name="header" height="43" depth="1">
         <headerbg />
