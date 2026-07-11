@@ -10,15 +10,15 @@ namespace PortalMod
     /// nombre de bloque ("portalBlock" / "portalBlockActive") para no afectar
     /// al resto de bloques del juego.
     ///
-    /// TODO GENERAL: las firmas exactas de Block.OnBlockPlaceBefore,
-    /// Block.OnBlockActivated y Block.OnBlockRemoved deben confirmarse contra
-    /// el Assembly-CSharp.dll publicized de la instalacion real de V3.0
-    /// (decompila con ILSpy/dnSpy y busca la clase "Block" en el namespace
-    /// raiz). Las firmas usadas aqui son las conocidas de builds anteriores
-    /// (A20-A21/1.0) y se mantienen razonablemente estables entre versiones,
-    /// pero cualquier cambio de parametros rompera la compilacion de forma
-    /// evidente (Harmony tambien falla ruidosamente en PatchAll si el metodo
-    /// objetivo no existe), lo cual facilita detectarlo y corregirlo.
+    /// TODO GENERAL: Block.OnBlockPlaceBefore ya se confirmo contra el
+    /// Assembly-CSharp.dll real de V3.0 (ver comentario en
+    /// Block_OnBlockPlaceBefore_Patch). Block.OnBlockActivated y
+    /// Block.OnBlockRemoved siguen sin confirmar — las firmas usadas ahi son
+    /// las conocidas de builds anteriores (A20-A21/1.0). Cualquier cambio de
+    /// parametros rompera la compilacion de forma evidente, o en el caso de
+    /// __result contra un metodo void, fallara ruidosamente al cargar el mod
+    /// (Harmony PatchAll/aplicacion del patch), igual que paso con
+    /// OnBlockPlaceBefore — revisar el log del juego si esto vuelve a ocurrir.
     /// </summary>
     internal static class PortalBlockPatch
     {
@@ -45,12 +45,27 @@ namespace PortalMod
     [HarmonyPatch(typeof(Block), "OnBlockPlaceBefore")]
     internal static class Block_OnBlockPlaceBefore_Patch
     {
-        // TODO: verificar en Assembly-CSharp V3.0. Firma esperada (builds previas):
-        //   public virtual bool OnBlockPlaceBefore(WorldBase _world, ref BlockPlacement.Result _bpResult, EntityAlive _ea)
-        // _bpResult.blockPos contiene la posicion final del bloque a colocar.
-        private static void Postfix(Block __instance, ref BlockPlacement.Result _bpResult, EntityAlive _ea, bool __result)
+        // Firma real confirmada por el error de carga de Harmony:
+        //   virtual void Block.OnBlockPlaceBefore(WorldBase _world,
+        //       ref BlockPlacement.Result _bpResult, EntityAlive _ea, GameRandom _rnd)
+        // Es "void", NO "bool" — Harmony no puede inyectar "__result" en un
+        // Postfix de un metodo void ("Cannot get result from void method...").
+        // Se elimino ese parametro; el Postfix ya no declara "_rnd" tampoco
+        // porque no lo necesita (Harmony solo inyecta los parametros del
+        // metodo original que el patch declara por nombre, el resto se ignora).
+        //
+        // TODO: al ser "OnBlockPlaceBefore" (llamado ANTES de colocar el
+        // bloque), sin __result ya no hay forma de saber si el juego termino
+        // aceptando o rechazando la colocacion (por ejemplo por colision en el
+        // punto elegido). Este Postfix ahora abre la ventana de tag apenas se
+        // INTENTA colocar un portalBlock, no necesariamente cuando el bloque
+        // quedo realmente en el mundo. Si en el juego real la ventana llega a
+        // abrirse sin que el bloque exista, mover esta logica a un hook que
+        // corra DESPUES de la colocacion real (candidato: Block.OnBlockAdded,
+        // pendiente de confirmar su firma tambien contra el DLL real).
+        private static void Postfix(Block __instance, ref BlockPlacement.Result _bpResult, EntityAlive _ea)
         {
-            if (!__result || !PortalBlockPatch.IsPortalBlock(__instance))
+            if (!PortalBlockPatch.IsPortalBlock(__instance))
             {
                 return;
             }

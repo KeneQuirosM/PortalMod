@@ -126,9 +126,15 @@ juego real. Anotar el resultado real de cada uno al probar:
 - [x] Confirmar si `sounds.xml` es necesario para registrar sonidos —
       **confirmado**: se creó `Config/sounds.xml` (nuevo archivo) con el
       `SoundDataNode` `guppyKeyUsed`.
-- [ ] Confirmar firmas exactas de los métodos parcheados con Harmony en
-      `Assembly-CSharp.dll` V3.0: `Block.OnBlockPlaceBefore`,
-      `Block.OnBlockActivated`, `Block.OnBlockRemoved` (`PortalBlockPatch.cs`).
+- [x] Confirmar firma de `Block.OnBlockPlaceBefore` — **confirmada** por el
+      error real de carga de Harmony: `void OnBlockPlaceBefore(WorldBase,
+      ref BlockPlacement.Result, EntityAlive, GameRandom)` (es `void`, no
+      `bool`; el patch ya no declara `__result`). Pendiente: los campos
+      reales de `BlockPlacement.Result` más allá de `blockPos` siguen sin
+      confirmar, y sin `__result` ya no se puede distinguir si la colocación
+      fue realmente aceptada — ver TODO en `Block_OnBlockPlaceBefore_Patch`.
+- [ ] Confirmar firmas exactas de `Block.OnBlockActivated` y
+      `Block.OnBlockRemoved` (`PortalBlockPatch.cs`).
 - [ ] Confirmar método correcto de teletransporte de `EntityPlayer` en
       servidor dedicado (`PortalTeleport.cs`, actualmente usa
       `player.SetPosition`).
