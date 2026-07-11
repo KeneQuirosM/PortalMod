@@ -1,6 +1,4 @@
 using System;
-using System.Linq;
-using System.Reflection;
 using UnityEngine;
 
 namespace PortalMod
@@ -167,56 +165,28 @@ namespace PortalMod
                 controller._tagInput.Text = _pendingCurrentTag ?? string.Empty;
             }
 
-            OpenWindowGroupSafely(xui.playerUI.windowManager, WindowName);
-        }
-
-        /// <summary>
-        /// El compilador real (Assembly-CSharp.dll V3.0) reporto que
-        /// "Open(string, bool, bool, bool)" (4 argumentos) ya no existe en el
-        /// window manager, pero no se tuvo acceso al DLL para confirmar la
-        /// firma correcta (candidatos sin verificar: XUiWindowGroupManager.Open
-        /// / XUiManager.Open con distinta cantidad/orden de parametros).
-        /// En vez de adivinar una segunda firma a ciegas, se invoca "Open" por
-        /// reflection: se toma el primer metodo publico llamado "Open" cuyo
-        /// primer parametro sea un string (el nombre de la ventana), y se
-        /// completan los parametros restantes con sus valores por defecto
-        /// (o el default del tipo si no tienen uno). Esto compila
-        /// incondicionalmente y sigue funcionando aunque cambie la cantidad
-        /// exacta de argumentos.
-        /// TODO: reemplazar por una llamada directa en cuanto se confirme la
-        /// firma real (decompilar XUiWindowGroupManager con ILSpy/dnSpy).
-        /// </summary>
-        private static void OpenWindowGroupSafely(object windowManager, string windowName)
-        {
-            if (windowManager == null)
-            {
-                API.LogWarning($"windowManager es null; no se pudo abrir '{windowName}'.");
-                return;
-            }
-
-            var method = windowManager.GetType().GetMethods()
-                .FirstOrDefault(m => m.Name == "Open" &&
-                                      m.GetParameters().Length > 0 &&
-                                      m.GetParameters()[0].ParameterType == typeof(string));
-
-            if (method == null)
-            {
-                API.LogWarning($"No se encontro un metodo Open(string, ...) en {windowManager.GetType().Name}; no se pudo abrir '{windowName}'.");
-                return;
-            }
-
-            var parameters = method.GetParameters();
-            var args = new object[parameters.Length];
-            args[0] = windowName;
-            for (var i = 1; i < parameters.Length; i++)
-            {
-                var p = parameters[i];
-                args[i] = p.HasDefaultValue ? p.DefaultValue
-                    : p.ParameterType.IsValueType ? Activator.CreateInstance(p.ParameterType)
-                    : null;
-            }
-
-            method.Invoke(windowManager, args);
+            // FIX real (el cursor del mouse no aparecia para poder hacer click
+            // en los botones): decompilando GameManager.gmUpdate contra el
+            // Assembly-CSharp.dll real se confirmo que la visibilidad del
+            // cursor depende cada frame de isAnyCursorWindowOpen(), que
+            // revisa windowManager.IsModalWindowOpen() ||
+            // windowManager.IsCursorWindowOpen(). La segunda rama requiere el
+            // flag "alwaysUsesMouseCursor" en true, pero se confirmo (busqueda
+            // en TODO el ensamblado) que NINGUN window group de XUi lo pone en
+            // true jamas — solo dos ventanas legacy no relacionadas
+            // (GUIWindowConsole, GUIWindowScreenshotText) lo usan. La unica
+            // rama real que aplica a ventanas XUi normales es
+            // IsModalWindowOpen(), que exige abrir la ventana con
+            // "_bModal: true". Confirma esto XUiC_MessageBoxWindowGroup.ShowOk
+            // (el popup de confirmacion vanilla mas parecido al nuestro), que
+            // usa "bool _modal = true" por defecto. Antes se abria con el
+            // valor por defecto de bool relleno por reflection (false), asi
+            // que la ventana nunca quedaba "modal" y el cursor nunca se
+            // habilitaba aunque los botones se vieran perfectamente.
+            // GUIWindowManager.Open(string, bool) ya esta confirmado por
+            // reflection, asi que ya no hace falta invocar "Open" via
+            // reflection como antes.
+            xui.playerUI.windowManager.Open(WindowName, true);
         }
 
         // Invocado desde el boton "confirmButton" (<simplebutton> en
