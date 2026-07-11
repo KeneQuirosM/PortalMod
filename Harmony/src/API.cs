@@ -89,9 +89,11 @@ namespace PortalMod
         /// <summary>
         /// Enumera por reflection TODAS las sobrecargas de "OnBlockActivated"
         /// declaradas en la clase "Block" (publicas y no publicas, de instancia)
-        /// y las loguea una por una con Log.Out, para leer las firmas reales
-        /// directamente del log del juego en vez de seguir adivinando tipos.
-        /// Ver PortalBlockPatch.cs (Block_OnBlockActivated_Patch, comentado).
+        /// y las loguea una por una con el wrapper Log(string) de esta clase
+        /// (evita referenciar la clase global "Log" de LogLibrary.dll sin
+        /// calificar, que dentro de API queda tapada por este mismo metodo
+        /// y produce CS0119), para leer las firmas reales directamente del
+        /// log del juego en vez de seguir adivinando tipos.
         /// </summary>
         private static void LogOnBlockActivatedOverloads()
         {
@@ -104,7 +106,7 @@ namespace PortalMod
 
                 if (overloads.Count == 0)
                 {
-                    global::Log.Out("[PortalMod] OnBlockActivated overloads: ninguna encontrada en la clase Block (nombre de metodo distinto en V3.0?).");
+                    Log("OnBlockActivated overloads: ninguna encontrada en la clase Block (nombre de metodo distinto en V3.0?).");
                     return;
                 }
 
@@ -112,13 +114,13 @@ namespace PortalMod
                 {
                     var parameters = string.Join(", ", method.GetParameters()
                         .Select(p => $"{p.ParameterType.Name} {p.Name}"));
-                    global::Log.Out($"[PortalMod] OnBlockActivated overloads: {method.ReturnType.Name} OnBlockActivated({parameters})");
+                    Log($"OnBlockActivated overloads: {method.ReturnType.Name} OnBlockActivated({parameters})");
                 }
             }
             catch (Exception e)
             {
                 // Puramente diagnostico: nunca debe impedir que el resto del mod cargue.
-                global::Log.Out($"[PortalMod] OnBlockActivated overloads: fallo al enumerar via reflection ({e.Message}).");
+                Log($"OnBlockActivated overloads: fallo al enumerar via reflection ({e.Message}).");
             }
         }
     }
