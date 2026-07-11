@@ -3,31 +3,30 @@
   <!--
       blocks.xml - PortalMod
 
-      FIX: el loader del juego reporto "Loading and parsing 'blocks.xml'
-      failed" (error generico, sin numero de linea). El archivo YA era XML
-      valido segun un parser estricto (validado con xmllint / libxml2), asi
-      que la causa mas probable no era una etiqueta mal cerrada sino
-      encoding: el archivo no tenia declaracion "<?xml ... encoding=...?>"
-      explicita y contenia caracteres no-ASCII (guiones largos "-"-tipo em
-      dash en los comentarios). Se agrego la declaracion de arriba y se
-      reemplazaron esos caracteres por guiones ASCII normales para eliminar
-      cualquier ambiguedad de encoding. Si el error persiste despues de esto,
-      el problema no era encoding y hay que revisar otra cosa (por ejemplo si
-      el "?" dentro de los valores "#@modfolder:...?prefab" le cae mal al
-      parser especifico del juego, aunque XML puro no lo prohibe).
+      FIX real: el loader reportaba "Loading and parsing 'blocks.xml' failed"
+      porque el atributo extends="..." puesto directamente en la etiqueta
+      <block> ya NO existe en el esquema de V3.0 (confirmado: 0 coincidencias
+      de ese patron en el blocks.xml vanilla instalado). La forma correcta es
+      una property anidada "Extends" (ver mas abajo), igual que usa el propio
+      juego para encadenar variantes (ej. concreteMaster -> concreteNoUpgradeMaster).
+      De paso, "reinforcedConcreteBlockBase" tampoco es un bloque vanilla real;
+      se reemplazo por concreteNoUpgradeMaster (existe en el blocks.xml vanilla),
+      una base solida de concreto sin ruta de upgrade.
 
       Define el bloque unico "portalBlock". No existe distincion madre/hijo:
       cualquier portal colocado puede actuar como origen o destino segun la
       vinculacion por tag que gestiona PortalManager.cs en tiempo de ejecucion.
 
-      NOTA V3.0: los bloques XML siguen usando <configs><append xpath="/blocks">
-      como raiz de parcheo (mismo patron que en A21/1.0). Se usa reinforcedConcreteBlock
-      como base solida 1x2x1 (multiblock alto x2) para dar presencia fisica al portal.
+      NOTA V3.0: los bloques XML siguen usando "configs"/"append xpath=/blocks"
+      como raiz de parcheo (mismo patron que en A21/1.0). concreteNoUpgradeMaster
+      se usa como base solida 1x2x1 (multiblock alto x2) para dar presencia
+      fisica al portal.
   -->
   <append xpath="/blocks">
 
     <!-- ================= PORTAL BLOCK ================= -->
-    <block name="portalBlock" extends="reinforcedConcreteBlockBase">
+    <block name="portalBlock">
+      <property name="Extends" value="concreteNoUpgradeMaster" />
 
       <!-- Multiblock 1 ancho x 2 alto x 1 profundo: marco de portal -->
       <property name="MultiBlockDim" value="1,2,1" />
@@ -115,7 +114,8 @@
         PortalManager - este bloque es puramente cosmetico y es aplicado por
         PortalVisualFX.SetBlockState().
     -->
-    <block name="portalBlockActive" extends="portalBlock">
+    <block name="portalBlockActive">
+      <property name="Extends" value="portalBlock" />
       <!--
           Modelo 3D del estado ACTIVO/vinculado: bundle gupFuturePortal6.unity3d.
           Nombre de prefab CONFIRMADO: guppyFuturePortal6.prefab.
@@ -139,7 +139,8 @@
         tipo "Torch"/"Candle"), se puede usar directamente sobre
         portalBlockActive y eliminar esta variante + el toggle en C#.
     -->
-    <block name="portalBlockActivePulseHigh" extends="portalBlockActive">
+    <block name="portalBlockActivePulseHigh">
+      <property name="Extends" value="portalBlockActive" />
       <property name="LightIntensity" value="1.15" />
       <property name="LightRadius" value="4.5" />
     </block>

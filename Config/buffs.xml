@@ -3,18 +3,15 @@
   <!--
       buffs.xml - PortalMod
 
-      FIX: el loader del juego reporto "Loading and parsing 'buffs.xml'
-      failed" (error generico, sin numero de linea). El archivo YA era XML
-      valido segun un parser estricto (validado con xmllint / libxml2), asi
-      que la causa mas probable no era una etiqueta mal cerrada sino
-      encoding: el archivo no tenia declaracion "<?xml ... encoding=...?>"
-      explicita y contenia caracteres no-ASCII (guiones largos "-"-tipo em
-      dash en los comentarios). Se agrego la declaracion de arriba y se
-      reemplazaron esos caracteres por guiones ASCII normales para eliminar
-      cualquier ambiguedad de encoding. Si el error persiste despues de esto,
-      el problema no era encoding y hay que revisar otra cosa (por ejemplo el
-      formato real esperado por action="AttachPrefabToEntity"/
-      "RemovePrefabFromEntity", que tampoco se pudo confirmar sin el juego).
+      FIX real: el loader reportaba "Loading and parsing 'buffs.xml' failed"
+      por atributos invalidos en <buff>, confirmados contra el buffs.xml
+      vanilla instalado (297 usos reales, 0 falsos):
+        - "iconColor" no existe como atributo; el nombre real es "icon_color".
+        - "DebuffPlayer" no existe en ningun <buff> vanilla; se elimino.
+      Ademas, parent_transform="CameraNode" (en los triggered_effect de abajo)
+      no es un valor real de parent_transform en el juego — el valor correcto
+      para adjuntar un prefab a la camara del jugador es "Camera" (confirmado
+      contra usos vanilla de AttachPrefabToEntity/AttachParticleEffectToEntity).
 
       buffPortalTravel: aplicado al jugador justo DESPUES de teletransportarlo
       (ver PortalTeleport.ExecuteTeleport), es decir con el jugador ya parado
@@ -39,14 +36,14 @@
         - gupTeleportRide.unity3d (prefab guppyTeleportRide) como efecto de
           viaje: NO es una particula en loop sino un prefab que se adjunta a
           la camara del jugador mientras dura el buff, via
-          action="AttachPrefabToEntity" / parent_transform="CameraNode", y se
+          action="AttachPrefabToEntity" / parent_transform="Camera", y se
           quita explicitamente al terminar via action="RemovePrefabFromEntity".
   -->
   <append xpath="/buffs">
 
     <buff name="buffPortalTravel" name_key="buffPortalTravelName" tooltip_key="buffPortalTravelDesc"
-          icon="ui_game_symbol_stun" iconColor="120,200,255" hidden="false"
-          duration="2" DebuffPlayer="false">
+          icon="ui_game_symbol_stun" icon_color="120,200,255" hidden="false"
+          duration="2">
 
       <!-- Congela al jugador: velocidad de movimiento a 0 durante toda la duracion -->
       <effect_group name="Portal Freeze">
@@ -68,16 +65,16 @@
 
       <!--
           DURANTE la transicion (2s): prefab de "viaje" (guppyTeleportRide)
-          adjunto a la camara del jugador (parent_transform="CameraNode"),
+          adjunto a la camara del jugador (parent_transform="Camera"),
           no una particula en loop - asi es como lo usa el mod de assets
           original. Se retira explicitamente al terminar el buff (ver
           onSelfBuffRemove abajo); duration=2 en el <buff> ya limita cuanto
           dura pegado a la camara aun si algo fallara al remover el prefab.
       -->
-      <triggered_effect trigger="onSelfBuffStart" action="AttachPrefabToEntity" prefab="#@modfolder:Resources/gupTeleportRide.unity3d?guppyTeleportRide" parent_transform="CameraNode" local_offset="0,0,-1" local_rotation="0,180,0" />
+      <triggered_effect trigger="onSelfBuffStart" action="AttachPrefabToEntity" prefab="#@modfolder:Resources/gupTeleportRide.unity3d?guppyTeleportRide" parent_transform="Camera" local_offset="0,0,-1" local_rotation="0,180,0" />
 
       <!-- Al finalizar (expira a los 2s, restaura velocidad automaticamente): quitar el prefab de viaje de la camara -->
-      <triggered_effect trigger="onSelfBuffRemove" action="RemovePrefabFromEntity" prefab="guppyTeleportRide" />
+      <triggered_effect trigger="onSelfBuffRemove" action="RemovePrefabFromEntity" prefab="guppyTeleportRide" parent_transform="Camera" />
 
     </buff>
 
