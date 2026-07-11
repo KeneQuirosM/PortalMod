@@ -32,12 +32,21 @@ madre/hijo — cualquier portal es válido como origen o destino.
 
 ## Compilación del DLL (Visual Studio 2022 / Rider)
 
-El proyecto está en `Harmony/PortalMod.csproj`.
+El proyecto está en `Harmony/PortalMod.csproj`. Ese archivo está en
+`.gitignore` a propósito — cada persona lo personaliza con la ruta local de
+su instalación del juego, y no queremos que `git pull` se la sobreescriba
+con la de otra persona. **Copia `PortalMod.csproj.template` a
+`PortalMod.csproj` y edita la ruta del juego antes de compilar**:
 
-1. Localiza la carpeta `Managed` de tu instalación del juego:
+```
+cp Harmony/PortalMod.csproj.template Harmony/PortalMod.csproj
+```
+
+1. Copia `PortalMod.csproj.template` a `PortalMod.csproj` (comando arriba).
+2. Localiza la carpeta `Managed` de tu instalación del juego:
    - Cliente Windows: `<instalación>\7DaysToDie_Data\Managed\`
    - Servidor dedicado: `<instalación>\7DaysToDieServer_Data\Managed\`
-2. **Publiciza `Assembly-CSharp.dll`** (obligatorio: el proyecto necesita
+3. **Publiciza `Assembly-CSharp.dll`** (obligatorio: el proyecto necesita
    acceder a miembros `internal`/`private` del juego para los patches de
    Harmony). Herramientas recomendadas:
    - [AssemblyPublicizer](https://github.com/CabbageCrow/AssemblyPublicizer) (standalone)
@@ -47,17 +56,17 @@ El proyecto está en `Harmony/PortalMod.csproj`.
    - Copia el `Assembly-CSharp_publicized.dll` resultante a la carpeta
      `Managed` (o renómbralo a `Assembly-CSharp.dll` en una copia aparte que
      uses solo para compilar, **nunca reemplaces el original del juego**).
-3. Define la variable de entorno `SEVENDAYS_INSTALL_DIR` apuntando a la raíz
+4. Define la variable de entorno `SEVENDAYS_INSTALL_DIR` apuntando a la raíz
    de tu instalación (recomendado, evita tocar el `.csproj`):
    - Windows (PowerShell): `setx SEVENDAYS_INSTALL_DIR "C:\Program Files (x86)\Steam\steamapps\common\7 Days To Die"`
    - Linux: `export SEVENDAYS_INSTALL_DIR="$HOME/.steam/steam/steamapps/common/7 Days To Die"`
    - Alternativamente edita directamente `<Game7DaysToDiePath>` dentro de
-     `Harmony/PortalMod.csproj`.
-4. Abre `Harmony/PortalMod.csproj` en Visual Studio 2022 o Rider y compila en
+     tu copia local de `Harmony/PortalMod.csproj` (no el `.template`).
+5. Abre `Harmony/PortalMod.csproj` en Visual Studio 2022 o Rider y compila en
    `Release`. El `.csproj` ya está configurado para que el DLL resultante
    (`PortalMod.dll`) se copie automáticamente a la raíz de `PortalMod/`
    (junto a `ModInfo.xml`), lista para distribuir/instalar.
-5. Si tu IDE se queja de referencias no encontradas, confirma que
+6. Si tu IDE se queja de referencias no encontradas, confirma que
    `Assembly-CSharp.dll`, `Assembly-CSharp-firstpass.dll`,
    `UnityEngine.CoreModule.dll` y `0Harmony.dll` existen dentro de la carpeta
    `Managed` detectada.
@@ -118,6 +127,7 @@ mismo tag.
 
 ```
 PortalMod/
+├── .gitignore
 ├── ModInfo.xml
 ├── README.md
 ├── Config/
@@ -128,7 +138,8 @@ PortalMod/
 │   ├── sounds.xml          SoundDataNode "guppyKeyUsed" (sonido de activacion)
 │   └── localization.txt    Strings en english / Spanish (es-ES)
 ├── Harmony/
-│   ├── PortalMod.csproj
+│   ├── PortalMod.csproj.template   Plantilla versionada (copiar, ver abajo)
+│   ├── PortalMod.csproj            Copia local, en .gitignore, NO versionado
 │   └── src/
 │       ├── API.cs              Punto de entrada IModApi
 │       ├── PortalManager.cs    Registro/vinculacion/cooldown/persistencia
