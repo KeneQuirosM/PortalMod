@@ -11,16 +11,19 @@ namespace PortalMod
     /// nombre de bloque ("portalBlock" / "portalBlockActive") para no afectar
     /// al resto de bloques del juego.
     ///
-    /// TODO GENERAL: Block.OnBlockPlaceBefore y la sobrecarga objetivo de
-    /// Block.OnBlockActivated ya se ajustaron contra errores reales de carga
-    /// del Assembly-CSharp.dll de V3.0 (ver comentarios en
-    /// Block_OnBlockPlaceBefore_Patch y Block_OnBlockActivated_Patch).
-    /// Block.OnBlockRemoved sigue sin confirmar — la firma usada ahi es la
-    /// conocida de builds anteriores (A20-A21/1.0). Cualquier firma incorrecta
-    /// falla ruidosamente al cargar el mod (Harmony PatchAll/aplicacion del
-    /// patch: "method not found", "AmbiguousMatchException", "Cannot get
-    /// result from void method", etc.) — revisar el log del juego si esto
-    /// vuelve a ocurrir y ajustar segun el mensaje exacto.
+    /// TODO GENERAL: Block.OnBlockPlaceBefore ya se ajusto contra un error real
+    /// de carga del Assembly-CSharp.dll de V3.0 (ver comentario en
+    /// Block_OnBlockPlaceBefore_Patch). Block.OnBlockActivated tuvo DOS
+    /// intentos fallidos seguidos (AmbiguousMatchException, luego "Undefined
+    /// target method") y por eso su patch quedo comentado con /* */ mas abajo
+    /// hasta tener las firmas reales — ver API.LogOnBlockActivatedOverloads,
+    /// que las loguea via reflection al iniciar el mod. Block.OnBlockRemoved
+    /// sigue sin confirmar — la firma usada ahi es la conocida de builds
+    /// anteriores (A20-A21/1.0). Cualquier firma incorrecta falla ruidosamente
+    /// al cargar el mod (Harmony PatchAll/aplicacion del patch: "method not
+    /// found", "AmbiguousMatchException", "Cannot get result from void
+    /// method", etc.) — revisar el log del juego si esto vuelve a ocurrir y
+    /// ajustar segun el mensaje exacto.
     /// </summary>
     internal static class PortalBlockPatch
     {
@@ -89,28 +92,30 @@ namespace PortalMod
 
     // ============================================================================
     // 2) INTERACCION CON TECLA E -> renombrar si ya tiene tag, o pedirlo si no.
-    // ============================================================================
-    // El error real de carga ("AmbiguousMatchException: Ambiguous match for
-    // HarmonyMethod [(class=Block, methodname=OnBlockActivated, ...)]")
-    // confirma que Block.OnBlockActivated tiene VARIAS sobrecargas en V3.0 —
-    // patchear solo por nombre ya no alcanza, Harmony no puede elegir cual.
-    // Se especifica explicitamente la sobrecarga que este patch espera, con
-    // el mismo orden/tipos de parametros que ya declaraba el Prefix de abajo:
-    //   bool OnBlockActivated(WorldBase, Vector3i, BlockValue, EntityAlive)
     //
-    // Sobrecargas candidatas conocidas en Block.OnBlockActivated (sin
-    // confirmar cuales existen exactamente en V3.0 mas alla de que la
-    // ambiguedad prueba que hay 2+):
-    //   - (WorldBase, Vector3i, BlockValue, EntityAlive) -> la que se targetea aqui.
-    //   - (int _indexInBlockActivationCommands, WorldBase, int _clrIdx,
-    //      Vector3i, BlockValue, EntityAlive) -> variante con soporte de
-    //      multiples comandos de activacion (A20+), asumida en una version
-    //      anterior de este comentario antes de conocerse el error real.
-    //   - Posible variante adicional con "int _cIdx" en vez de "int _clrIdx"
-    //      o con un orden de parametros distinto.
-    // TODO: si este patch tambien tira AmbiguousMatchException o "no existe
-    // metodo", decompilar Block con ILSpy/dnSpy y listar TODAS las
-    // sobrecargas de OnBlockActivated para elegir la correcta con certeza.
+    // DESHABILITADO TEMPORALMENTE (comentado con /* */ a proposito, no borrado):
+    // la firma explicita (WorldBase, Vector3i, BlockValue, EntityAlive) que se
+    // probo aqui NO existe en el Assembly-CSharp.dll real de V3.0 — el error de
+    // carga paso de "AmbiguousMatchException" (no sabia cual sobrecarga) a
+    // "Undefined target method" (ninguna sobrecarga coincide con esos 4 tipos
+    // exactos). Dos adivinanzas seguidas fallaron, asi que en vez de intentar
+    // una tercera a ciegas y volver a tumbar la carga del mod, se comenta este
+    // patch completo para que PatchAll() ya ni lo intente, y se agrega en su
+    // lugar un logueo por reflection de TODAS las sobrecargas reales de
+    // Block.OnBlockActivated (ver API.cs, LogOnBlockActivatedOverloads) para
+    // leerlas directamente del log del juego en vez de seguir adivinando.
+    //
+    // IMPACTO: mientras este patch siga comentado, interactuar (tecla E) con
+    // un portal ya colocado NO abre la ventana de renombrado (regla 9 de la
+    // spec del mod) — el resto del mod (colocar, vincular por tag, viajar,
+    // destruir) sigue funcionando normalmente, ya que no depende de este patch.
+    //
+    // TODO: una vez que el log muestre las firmas reales de
+    // Block.OnBlockActivated, descomentar este bloque, ajustar el
+    // [HarmonyPatch(...)] con los tipos correctos y el Prefix con los
+    // parametros/nombres que correspondan, y borrar este comentario.
+    // ============================================================================
+    /*
     [HarmonyPatch(typeof(Block), "OnBlockActivated",
         new Type[] { typeof(WorldBase), typeof(Vector3i), typeof(BlockValue), typeof(EntityAlive) })]
     internal static class Block_OnBlockActivated_Patch
@@ -150,6 +155,7 @@ namespace PortalMod
             return false;
         }
     }
+    */
 
     // ============================================================================
     // 3) BLOQUE DESTRUIDO -> desregistrar del PortalManager.

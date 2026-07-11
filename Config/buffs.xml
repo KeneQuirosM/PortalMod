@@ -1,6 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <configs>
   <!--
-      buffs.xml — PortalMod
+      buffs.xml - PortalMod
+
+      FIX: el loader del juego reporto "Loading and parsing 'buffs.xml'
+      failed" (error generico, sin numero de linea). El archivo YA era XML
+      valido segun un parser estricto (validado con xmllint / libxml2), asi
+      que la causa mas probable no era una etiqueta mal cerrada sino
+      encoding: el archivo no tenia declaracion "<?xml ... encoding=...?>"
+      explicita y contenia caracteres no-ASCII (guiones largos "-"-tipo em
+      dash en los comentarios). Se agrego la declaracion de arriba y se
+      reemplazaron esos caracteres por guiones ASCII normales para eliminar
+      cualquier ambiguedad de encoding. Si el error persiste despues de esto,
+      el problema no era encoding y hay que revisar otra cosa (por ejemplo el
+      formato real esperado por action="AttachPrefabToEntity"/
+      "RemovePrefabFromEntity", que tampoco se pudo confirmar sin el juego).
+
       buffPortalTravel: aplicado al jugador justo DESPUES de teletransportarlo
       (ver PortalTeleport.ExecuteTeleport), es decir con el jugador ya parado
       en el portal de DESTINO. Congela el movimiento durante la transicion
@@ -19,7 +34,7 @@
           AssetBundle: los <triggered_effect action="PlaySound"> requieren un
           nombre de sonido REGISTRADO previamente. Se registro
           "guppyKeyUsed" en Config/sounds.xml, que apunta internamente al
-          clip "guppyKeyCardSound" dentro de gupKeyCardSound.unity3d — aqui
+          clip "guppyKeyCardSound" dentro de gupKeyCardSound.unity3d - aqui
           simplemente se referencia sound="guppyKeyUsed".
         - gupTeleportRide.unity3d (prefab guppyTeleportRide) como efecto de
           viaje: NO es una particula en loop sino un prefab que se adjunta a
@@ -46,7 +61,7 @@
           + sonido de activacion (guppyKeyUsed, registrado en sounds.xml).
           particle_scale elevado a proposito para "potenciar" el efecto de
           salida pedido. Tambien adjunta el prefab de "viaje"
-          (guppyTeleportRide) a la camara del jugador — ver bloque de abajo.
+          (guppyTeleportRide) a la camara del jugador - ver bloque de abajo.
       -->
       <triggered_effect trigger="onSelfBuffStart" action="PlayParticleEffect" particle="#@modfolder:Resources/gupFuturePortal4.unity3d?guppyFuturePortal4.prefab" particle_scale="1.6" />
       <triggered_effect trigger="onSelfBuffStart" action="PlaySound" sound="guppyKeyUsed" />
@@ -54,7 +69,7 @@
       <!--
           DURANTE la transicion (2s): prefab de "viaje" (guppyTeleportRide)
           adjunto a la camara del jugador (parent_transform="CameraNode"),
-          no una particula en loop — asi es como lo usa el mod de assets
+          no una particula en loop - asi es como lo usa el mod de assets
           original. Se retira explicitamente al terminar el buff (ver
           onSelfBuffRemove abajo); duration=2 en el <buff> ya limita cuanto
           dura pegado a la camara aun si algo fallara al remover el prefab.

@@ -20,6 +20,14 @@ namespace PortalMod
             ModInstance = _modInstance;
             Log("Inicializando PortalMod...");
 
+            // Diagnostico: Block_OnBlockActivated_Patch (PortalBlockPatch.cs) quedo
+            // comentado despues de dos intentos fallidos de adivinar su firma real
+            // (AmbiguousMatchException, luego "Undefined target method"). En vez de
+            // una tercera adivinanza, se loguean por reflection TODAS las
+            // sobrecargas reales de Block.OnBlockActivated ANTES de PatchAll, para
+            // que quede en el log del juego incluso si algo mas fallara al parchear.
+            LogOnBlockActivatedOverloads();
+
             // Harmony esta integrado de forma nativa desde A20 y se carga desde
             // 0Harmony.dll del propio juego, no hace falta empaquetarlo con el mod.
             var harmony = new Harmony(HarmonyId);
@@ -76,6 +84,42 @@ namespace PortalMod
         internal static void LogError(string message)
         {
             Debug.LogError($"[PortalMod] {message}");
+        }
+
+        /// <summary>
+        /// Enumera por reflection TODAS las sobrecargas de "OnBlockActivated"
+        /// declaradas en la clase "Block" (publicas y no publicas, de instancia)
+        /// y las loguea una por una con Log.Out, para leer las firmas reales
+        /// directamente del log del juego en vez de seguir adivinando tipos.
+        /// Ver PortalBlockPatch.cs (Block_OnBlockActivated_Patch, comentado).
+        /// </summary>
+        private static void LogOnBlockActivatedOverloads()
+        {
+            try
+            {
+                var overloads = typeof(Block).GetMethods(
+                        BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static)
+                    .Where(m => m.Name == "OnBlockActivated")
+                    .ToList();
+
+                if (overloads.Count == 0)
+                {
+                    Log.Out("[PortalMod] OnBlockActivated overloads: ninguna encontrada en la clase Block (nombre de metodo distinto en V3.0?).");
+                    return;
+                }
+
+                foreach (var method in overloads)
+                {
+                    var parameters = string.Join(", ", method.GetParameters()
+                        .Select(p => $"{p.ParameterType.Name} {p.Name}"));
+                    Log.Out($"[PortalMod] OnBlockActivated overloads: {method.ReturnType.Name} OnBlockActivated({parameters})");
+                }
+            }
+            catch (Exception e)
+            {
+                // Puramente diagnostico: nunca debe impedir que el resto del mod cargue.
+                Log.Out($"[PortalMod] OnBlockActivated overloads: fallo al enumerar via reflection ({e.Message}).");
+            }
         }
     }
 
