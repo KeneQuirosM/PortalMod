@@ -41,7 +41,7 @@
       <property name="Model" value="#@modfolder:Resources/gupFuturePortal1.unity3d?guppyFuturePortal1.prefab" />
 
       <property name="Class" value="Block" />
-      <property name="Material" value="Mmetal_scrap" />
+      <property name="Material" value="Mmetal" />
       <property name="EconomicValue" value="0" />
       <property name="Group" value="Building" />
       <!-- Icono de inventario/creativo (ver Config/items.xml para el mismo icono en portalBlockItem) -->
