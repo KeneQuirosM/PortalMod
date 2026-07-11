@@ -1,4 +1,4 @@
-Key,File,Type,UsedInMainMenu,NoTranslate,english,Spanish (es-ES),Context/Alternate Text
+Key,File,Type,UsedInMainMenu,NoTranslate,english,spanish,Context / Alternate Text
 portalBlockName,items,Item,,,Teleport Portal,Portal de Teletransporte,
 portalBlockDesc,items,Item,,,"A stone-and-metal frame that links to another portal sharing the same tag. Place two with the same tag to travel instantly between them.","Un marco de piedra y metal que se enlaza con otro portal que comparta el mismo nombre (tag). Coloca dos con el mismo tag para viajar instantaneamente entre ellos.",
 portalBlockActiveDesc,items,Item,,,"An active teleport portal, currently linked to its pair.","Un portal de teletransporte activo, actualmente enlazado con su par.",

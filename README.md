@@ -139,7 +139,7 @@ PortalMod/
 │   ├── recipes.xml         Receta de workbench
 │   ├── buffs.xml           buffPortalTravel
 │   ├── sounds.xml          SoundDataNode "guppyKeyUsed" (sonido de activacion)
-│   ├── localization.txt    Strings en english / Spanish (es-ES)
+│   ├── Localization.csv    Strings en english / spanish (nombre real esperado por el juego)
 │   └── XUi_InGame/
 │       ├── windows.xml     Ventana popup "Nombrar portal" (windowPortalTag)
 │       └── xui.xml         window_group que registra windowPortalTag
