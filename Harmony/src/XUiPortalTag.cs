@@ -82,13 +82,21 @@ namespace PortalMod
                 return;
             }
 
-            // Confirmado por reflection contra Assembly-CSharp.dll real:
+            // Confirmado por reflection/decompile contra Assembly-CSharp.dll real:
             //   - GetChildById(string) NO es generico (devuelve XUiController
             //     base) — el cast "as XUiC_SimpleButton" de abajo es
             //     obligatorio, "GetChildById<T>(...)" no existe.
-            //   - XUiC_SimpleButton.OnPress es un
-            //     XUiEvent_OnPressEventHandler: void(XUiController _sender,
-            //     int _mouseButton).
+            //   - FIX real (Confirm() no se ejecutaba pese a que los botones
+            //     SI se encontraban): XUiC_SimpleButton declara su PROPIO
+            //     evento "OnPressed" (no el "OnPress" heredado de
+            //     XUiController, que nunca se dispara para este control). El
+            //     click real en el <button name="clickable"> interno del
+            //     template <simplebutton> se maneja en
+            //     XUiC_SimpleButton.Btn_OnPress, que literalmente hace
+            //     "this.OnPressed?.Invoke(this, _mouseButton);" — nunca toca
+            //     "OnPress". Mismo tipo de delegado que antes
+            //     (XUiEvent_OnPressEventHandler: void(XUiController _sender,
+            //     int _mouseButton)), asi que el lambda no cambia.
             var confirmBtn = GetChildById(ConfirmButtonId) as XUiC_SimpleButton;
             API.Log("[PortalMod] confirmButton encontrado: " + (confirmBtn != null));
 
@@ -102,8 +110,8 @@ namespace PortalMod
                 return;
             }
 
-            confirmBtn.OnPress += (_sender, _mouseButton) => Confirm();
-            cancelBtn.OnPress += (_sender, _mouseButton) => Cancel();
+            confirmBtn.OnPressed += (_sender, _mouseButton) => Confirm();
+            cancelBtn.OnPressed += (_sender, _mouseButton) => Cancel();
             _buttonsWired = true;
         }
 
