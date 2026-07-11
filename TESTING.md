@@ -135,12 +135,18 @@ juego real. Anotar el resultado real de cada uno al probar:
       fue realmente aceptada — ver TODO en `Block_OnBlockPlaceBefore_Patch`.
 - [x] Confirmar que `Block.OnBlockActivated` tiene múltiples sobrecargas en
       V3.0 — **confirmado** por `AmbiguousMatchException` al cargar el mod
-      (ver 10.1 más abajo); el patch ahora especifica explícitamente la
-      sobrecarga `(WorldBase, Vector3i, BlockValue, EntityAlive)`. Pendiente:
-      esa sobrecarga específica (nombres/orden exacto de parámetros más allá
-      de los tipos) sigue sin confirmarse contra el DLL real — si Harmony no
-      encuentra un método con esos 4 tipos exactos, fallará con "no method
-      found" en vez de la ambigüedad anterior.
+      (ver 10.1 más abajo). El intento de especificar explícitamente
+      `(WorldBase, Vector3i, BlockValue, EntityAlive)` **también falló**
+      ("Undefined target method" — esos 4 tipos no coinciden con ninguna
+      sobrecarga real). `Block_OnBlockActivated_Patch` quedó **comentado**
+      (`/* */`) en `PortalBlockPatch.cs` para no seguir bloqueando la carga
+      del mod. Se agregó `API.LogOnBlockActivatedOverloads()` (corre al
+      inicio de `InitMod`, antes de `PatchAll`) que loguea con `Log.Out(...)`
+      todas las sobrecargas reales de `Block.OnBlockActivated` encontradas
+      por reflection — **pendiente: leer esas líneas del log del juego** para
+      poder descomentar el patch con la firma correcta. Mientras tanto,
+      renombrar un portal con **E** no funciona (regla 9); el resto del mod
+      no depende de este patch y sigue funcionando.
 - [ ] Confirmar firma exacta de `Block.OnBlockRemoved` (`PortalBlockPatch.cs`).
 - [ ] Confirmar método correcto de teletransporte de `EntityPlayer` en
       servidor dedicado (`PortalTeleport.cs`, actualmente usa
@@ -195,13 +201,37 @@ cada uno sigue sin probarse:
 - [x] `Block.OnBlockPlaceBefore` es `void`, no `bool` — **corregido**,
       ver ítem dedicado en la lista principal de esta sección (10) arriba.
 - [x] `AmbiguousMatchException` al cargar el mod: `Block.OnBlockActivated`
-      tiene varias sobrecargas y el patch no especificaba cuál — **corregido**
-      agregando los tipos explícitos `(WorldBase, Vector3i, BlockValue,
-      EntityAlive)` al atributo `[HarmonyPatch(...)]` de
-      `Block_OnBlockActivated_Patch` (`PortalBlockPatch.cs`). Pendiente:
-      confirmar que esos 4 tipos, en ese orden, realmente coinciden con una
-      sobrecarga real — si no, el error cambiará de "ambiguo" a "método no
-      encontrado", igual de ruidoso en el log al cargar el mod.
+      tiene varias sobrecargas y el patch no especificaba cuál — **primer
+      intento**: se agregaron los tipos explícitos `(WorldBase, Vector3i,
+      BlockValue, EntityAlive)` al atributo `[HarmonyPatch(...)]`. Ese primer
+      intento **también falló** — ver ítem siguiente.
+- [x] `Undefined target method for patch method ... Prefix(WorldBase,
+      Vector3i, BlockValue, EntityAlive, Boolean&)` — la sobrecarga de 4
+      tipos del intento anterior **no existe** en el `Assembly-CSharp.dll`
+      real. **Corregido** comentando por completo `Block_OnBlockActivated_Patch`
+      con `/* */` (no se borró, para poder descomentarlo despues) y
+      agregando `API.LogOnBlockActivatedOverloads()`, que corre al inicio de
+      `InitMod` y loguea con `Log.Out("[PortalMod] OnBlockActivated
+      overloads: ...")` cada sobrecarga real de `Block.OnBlockActivated`
+      encontrada por reflection. **Pendiente: leer esas líneas en el log del
+      juego** para conocer la firma real y poder reactivar el patch. Mientras
+      tanto, renombrar un portal con la tecla E no hace nada (el resto del
+      mod sigue funcionando).
+- [x] `XML loader: Loading and parsing 'blocks.xml' failed` /
+      `'buffs.xml' failed` — ambos archivos ya eran XML válido según un
+      parser estricto (xmllint/libxml2), así que no había etiquetas sin
+      cerrar ni caracteres sin escapar en el sentido estricto de XML.
+      **Corregido de forma defensiva** (causa no confirmada con certeza):
+      se agregó la declaración `<?xml version="1.0" encoding="UTF-8"?>`
+      que faltaba en ambos archivos, y se reemplazaron los únicos caracteres
+      no-ASCII presentes (guiones largos tipo em dash en los comentarios)
+      por guiones ASCII normales, para eliminar cualquier ambigüedad de
+      encoding que el loader del juego pueda manejar de forma más estricta
+      que un parser XML genérico. **Pendiente: confirmar en el juego real**
+      que esto era la causa; si el error persiste, revisar si el `?` dentro
+      de los valores `#@modfolder:...?prefab` o el formato de
+      `AttachPrefabToEntity`/`RemovePrefabFromEntity` en `buffs.xml` le cae
+      mal al parser específico del juego.
 
 ## 11. Pruebas de multijugador (si aplica)
 

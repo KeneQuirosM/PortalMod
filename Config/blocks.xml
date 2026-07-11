@@ -1,6 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <configs>
   <!--
-      blocks.xml — PortalMod
+      blocks.xml - PortalMod
+
+      FIX: el loader del juego reporto "Loading and parsing 'blocks.xml'
+      failed" (error generico, sin numero de linea). El archivo YA era XML
+      valido segun un parser estricto (validado con xmllint / libxml2), asi
+      que la causa mas probable no era una etiqueta mal cerrada sino
+      encoding: el archivo no tenia declaracion "<?xml ... encoding=...?>"
+      explicita y contenia caracteres no-ASCII (guiones largos "-"-tipo em
+      dash en los comentarios). Se agrego la declaracion de arriba y se
+      reemplazaron esos caracteres por guiones ASCII normales para eliminar
+      cualquier ambiguedad de encoding. Si el error persiste despues de esto,
+      el problema no era encoding y hay que revisar otra cosa (por ejemplo si
+      el "?" dentro de los valores "#@modfolder:...?prefab" le cae mal al
+      parser especifico del juego, aunque XML puro no lo prohibe).
+
       Define el bloque unico "portalBlock". No existe distincion madre/hijo:
       cualquier portal colocado puede actuar como origen o destino segun la
       vinculacion por tag que gestiona PortalManager.cs en tiempo de ejecucion.
@@ -75,7 +90,7 @@
           controlan la luz que EMITE el bloque. "LightOpacity" (mencionada por
           el usuario) es una propiedad vanilla distinta: controla cuanta luz
           AJENA bloquea este bloque al proyectar sombras, no cuanta luz emite
-          el propio bloque — se deja en 0 para que el portal no proyecte
+          el propio bloque - se deja en 0 para que el portal no proyecte
           sombra dura sobre su propia luz.
           TODO: verificar en Assembly-CSharp V3.0 / blocks.xml vanilla (p.ej.
           "torchWall", "lanternBase01") los nombres exactos y rangos validos
@@ -97,7 +112,7 @@
         Variante "ACTIVA" (par vinculado, fase BAJA del pulso): mismo modelo
         base, luz azul-violeta mas intensa y de mayor radio que el estado
         inactivo. El estado real (huerfano/vinculado) siempre vive en
-        PortalManager — este bloque es puramente cosmetico y es aplicado por
+        PortalManager - este bloque es puramente cosmetico y es aplicado por
         PortalVisualFX.SetBlockState().
     -->
     <block name="portalBlockActive" extends="portalBlock">
