@@ -109,7 +109,7 @@ namespace PortalMod
     internal static class Block_OnBlockActivated_Patch
     {
         private static bool Prefix(WorldBase _world, Vector3i _blockPos, BlockValue _blockValue,
-            EntityPlayerLocal _entityFocusing, ref bool __result)
+            EntityPlayerLocal _player, ref bool __result)
         {
             if (!PortalBlockPatch.IsPortalBlock(_blockValue))
             {
@@ -117,7 +117,7 @@ namespace PortalMod
                 return true;
             }
 
-            var player = _entityFocusing as EntityPlayer;
+            var player = _player as EntityPlayer;
             if (player == null)
             {
                 __result = false;
