@@ -57,8 +57,17 @@
       <!-- Tag interna que usa PortalBlockPatch.cs para reconocer el bloque -->
       <property name="IsPortalBlock" value="true" />
 
-      <!-- Que no se pueda "usar" como contenedor ni destruir con un click -->
-      <property name="ParticleOnDestroy" value="destroy_wood_small" />
+      <!--
+          DIAGNOSTICO crash en WeatherManager.InitParticles al generar mundo:
+          "ParticleOnDestroy" NO es una propiedad real de bloque (0 coincidencias
+          en el blocks.xml vanilla instalado) y "destroy_wood_small" tampoco es
+          un nombre de particula/prefab vanilla real (no hay match parcial ni
+          exacto). Se elimina en vez de adivinar un reemplazo: la variante real
+          "ParticleOnDeath" existe pero solo se usa con nombres de particula
+          confirmados (ej. "treeGib_burnt", "car_destruction_dmg1") que
+          requieren su propio asset registrado; no hay uno equivalente
+          confirmado para este bloque todavia.
+      -->
       <property name="DowngradeBlock" value="terrainRubble" />
 
       <!-- Resistencia -->

@@ -53,14 +53,31 @@
       </effect_group>
 
       <!--
+          DIAGNOSTICO crash en WeatherManager.InitParticles al generar mundo
+          nuevo (ver GetParticleParts -> GetParticle -> SkyManager.skyManager.
+          transform.Find(name), sin null-check, decompilado contra el
+          Assembly-CSharp.dll real): esta cadena depende de que la jerarquia
+          de SkyManager termine de instanciarse normalmente durante la carga.
+          Si algun asset externo del mod (particula/prefab via #@modfolder o
+          por nombre) tira una excepcion sin capturar durante esa misma
+          secuencia de carga, puede cortarla a mitad y dejar a WeatherManager
+          con la jerarquia de Sky incompleta cuando corre. Se comentan aqui,
+          como aislamiento de diagnostico, TODOS los triggered_effect de este
+          buff que referencian assets externos (particula/prefab, con o sin
+          #@modfolder) hasta confirmar si son o no la causa real. Con esto
+          comentado el buff sigue congelando al jugador (ver "Portal Freeze"
+          arriba) pero sin flash/particula de llegada ni prefab de viaje en
+          camara.
+
           LLEGADA (justo al aplicarse el buff, con el jugador ya en el
           destino): destello/particula de teletransporte (gupFuturePortal4)
           + sonido de activacion (guppyKeyUsed, registrado en sounds.xml).
           particle_scale elevado a proposito para "potenciar" el efecto de
           salida pedido. Tambien adjunta el prefab de "viaje"
           (guppyTeleportRide) a la camara del jugador - ver bloque de abajo.
-      -->
+
       <triggered_effect trigger="onSelfBuffStart" action="PlayParticleEffect" particle="#@modfolder:Resources/gupFuturePortal4.unity3d?guppyFuturePortal4.prefab" particle_scale="1.6" />
+      -->
       <triggered_effect trigger="onSelfBuffStart" action="PlaySound" sound="guppyKeyUsed" />
 
       <!--
@@ -70,11 +87,12 @@
           original. Se retira explicitamente al terminar el buff (ver
           onSelfBuffRemove abajo); duration=2 en el <buff> ya limita cuanto
           dura pegado a la camara aun si algo fallara al remover el prefab.
-      -->
+
       <triggered_effect trigger="onSelfBuffStart" action="AttachPrefabToEntity" prefab="#@modfolder:Resources/gupTeleportRide.unity3d?guppyTeleportRide" parent_transform="Camera" local_offset="0,0,-1" local_rotation="0,180,0" />
 
-      <!-- Al finalizar (expira a los 2s, restaura velocidad automaticamente): quitar el prefab de viaje de la camara -->
+      Al finalizar (expira a los 2s, restaura velocidad automaticamente): quitar el prefab de viaje de la camara
       <triggered_effect trigger="onSelfBuffRemove" action="RemovePrefabFromEntity" prefab="guppyTeleportRide" parent_transform="Camera" />
+      -->
 
     </buff>
 
