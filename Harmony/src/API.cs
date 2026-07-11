@@ -104,7 +104,7 @@ namespace PortalMod
 
                 if (overloads.Count == 0)
                 {
-                    Log.Out("[PortalMod] OnBlockActivated overloads: ninguna encontrada en la clase Block (nombre de metodo distinto en V3.0?).");
+                    global::Log.Out("[PortalMod] OnBlockActivated overloads: ninguna encontrada en la clase Block (nombre de metodo distinto en V3.0?).");
                     return;
                 }
 
@@ -112,13 +112,13 @@ namespace PortalMod
                 {
                     var parameters = string.Join(", ", method.GetParameters()
                         .Select(p => $"{p.ParameterType.Name} {p.Name}"));
-                    Log.Out($"[PortalMod] OnBlockActivated overloads: {method.ReturnType.Name} OnBlockActivated({parameters})");
+                    global::Log.Out($"[PortalMod] OnBlockActivated overloads: {method.ReturnType.Name} OnBlockActivated({parameters})");
                 }
             }
             catch (Exception e)
             {
                 // Puramente diagnostico: nunca debe impedir que el resto del mod cargue.
-                Log.Out($"[PortalMod] OnBlockActivated overloads: fallo al enumerar via reflection ({e.Message}).");
+                global::Log.Out($"[PortalMod] OnBlockActivated overloads: fallo al enumerar via reflection ({e.Message}).");
             }
         }
     }
