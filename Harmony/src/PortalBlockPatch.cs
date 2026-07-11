@@ -1,3 +1,4 @@
+using System;
 using HarmonyLib;
 using UnityEngine;
 
@@ -10,15 +11,16 @@ namespace PortalMod
     /// nombre de bloque ("portalBlock" / "portalBlockActive") para no afectar
     /// al resto de bloques del juego.
     ///
-    /// TODO GENERAL: Block.OnBlockPlaceBefore ya se confirmo contra el
-    /// Assembly-CSharp.dll real de V3.0 (ver comentario en
-    /// Block_OnBlockPlaceBefore_Patch). Block.OnBlockActivated y
-    /// Block.OnBlockRemoved siguen sin confirmar — las firmas usadas ahi son
-    /// las conocidas de builds anteriores (A20-A21/1.0). Cualquier cambio de
-    /// parametros rompera la compilacion de forma evidente, o en el caso de
-    /// __result contra un metodo void, fallara ruidosamente al cargar el mod
-    /// (Harmony PatchAll/aplicacion del patch), igual que paso con
-    /// OnBlockPlaceBefore — revisar el log del juego si esto vuelve a ocurrir.
+    /// TODO GENERAL: Block.OnBlockPlaceBefore y la sobrecarga objetivo de
+    /// Block.OnBlockActivated ya se ajustaron contra errores reales de carga
+    /// del Assembly-CSharp.dll de V3.0 (ver comentarios en
+    /// Block_OnBlockPlaceBefore_Patch y Block_OnBlockActivated_Patch).
+    /// Block.OnBlockRemoved sigue sin confirmar — la firma usada ahi es la
+    /// conocida de builds anteriores (A20-A21/1.0). Cualquier firma incorrecta
+    /// falla ruidosamente al cargar el mod (Harmony PatchAll/aplicacion del
+    /// patch: "method not found", "AmbiguousMatchException", "Cannot get
+    /// result from void method", etc.) — revisar el log del juego si esto
+    /// vuelve a ocurrir y ajustar segun el mensaje exacto.
     /// </summary>
     internal static class PortalBlockPatch
     {
@@ -88,14 +90,31 @@ namespace PortalMod
     // ============================================================================
     // 2) INTERACCION CON TECLA E -> renombrar si ya tiene tag, o pedirlo si no.
     // ============================================================================
-    [HarmonyPatch(typeof(Block), "OnBlockActivated")]
+    // El error real de carga ("AmbiguousMatchException: Ambiguous match for
+    // HarmonyMethod [(class=Block, methodname=OnBlockActivated, ...)]")
+    // confirma que Block.OnBlockActivated tiene VARIAS sobrecargas en V3.0 —
+    // patchear solo por nombre ya no alcanza, Harmony no puede elegir cual.
+    // Se especifica explicitamente la sobrecarga que este patch espera, con
+    // el mismo orden/tipos de parametros que ya declaraba el Prefix de abajo:
+    //   bool OnBlockActivated(WorldBase, Vector3i, BlockValue, EntityAlive)
+    //
+    // Sobrecargas candidatas conocidas en Block.OnBlockActivated (sin
+    // confirmar cuales existen exactamente en V3.0 mas alla de que la
+    // ambiguedad prueba que hay 2+):
+    //   - (WorldBase, Vector3i, BlockValue, EntityAlive) -> la que se targetea aqui.
+    //   - (int _indexInBlockActivationCommands, WorldBase, int _clrIdx,
+    //      Vector3i, BlockValue, EntityAlive) -> variante con soporte de
+    //      multiples comandos de activacion (A20+), asumida en una version
+    //      anterior de este comentario antes de conocerse el error real.
+    //   - Posible variante adicional con "int _cIdx" en vez de "int _clrIdx"
+    //      o con un orden de parametros distinto.
+    // TODO: si este patch tambien tira AmbiguousMatchException o "no existe
+    // metodo", decompilar Block con ILSpy/dnSpy y listar TODAS las
+    // sobrecargas de OnBlockActivated para elegir la correcta con certeza.
+    [HarmonyPatch(typeof(Block), "OnBlockActivated",
+        new Type[] { typeof(WorldBase), typeof(Vector3i), typeof(BlockValue), typeof(EntityAlive) })]
     internal static class Block_OnBlockActivated_Patch
     {
-        // TODO: verificar en Assembly-CSharp V3.0. Firma esperada (builds previas,
-        // A20+, con soporte de multiples comandos de activacion por bloque):
-        //   public virtual bool OnBlockActivated(int _indexInBlockActivationCommands,
-        //       WorldBase _world, int _clrIdx, Vector3i _blockPos, BlockValue _blockValue,
-        //       EntityAlive _entityFocusing)
         private static bool Prefix(WorldBase _world, Vector3i _blockPos, BlockValue _blockValue,
             EntityAlive _entityFocusing, ref bool __result)
         {
