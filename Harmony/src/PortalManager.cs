@@ -88,6 +88,8 @@ namespace PortalMod
         /// </summary>
         public RegisterResult RegisterPortal(string steamId, string tag, Vector3i pos)
         {
+            API.Log("[PortalMod] RegisterPortal llamado - steamId: " + steamId + " tag: " + tag + " pos: " + pos);
+
             if (string.IsNullOrWhiteSpace(tag))
             {
                 return RegisterResult.EmptyTag;

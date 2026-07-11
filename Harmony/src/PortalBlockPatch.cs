@@ -68,7 +68,10 @@ namespace PortalMod
         // pendiente de confirmar su firma tambien contra el DLL real).
         private static void Postfix(Block __instance, ref BlockPlacement.Result _bpResult, EntityAlive _ea)
         {
-            if (!PortalBlockPatch.IsPortalBlock(__instance))
+            var isPortalBlock = PortalBlockPatch.IsPortalBlock(__instance);
+            API.Log("[PortalMod] OnBlockPlaceBefore Postfix - bloque: " + __instance?.GetBlockName() + " esPortalBlock: " + isPortalBlock);
+
+            if (!isPortalBlock)
             {
                 return;
             }
@@ -84,6 +87,7 @@ namespace PortalMod
 
             // El bloque todavia no esta registrado en PortalManager: se registra
             // recien cuando el jugador confirma un tag en la ventana (ver XUiPortalTag).
+            API.Log("[PortalMod] Llamando a XUiPortalTag.OpenForNewPortal...");
             XUiPortalTag.OpenForNewPortal(player, blockPos);
         }
     }

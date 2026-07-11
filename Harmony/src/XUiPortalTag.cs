@@ -235,9 +235,11 @@ namespace PortalMod
         }
 
         // Invocado desde el boton "confirmButton" (<simplebutton> en
-        // windows.xml) via el OnPress conectado en WireButtons().
+        // windows.xml) via el OnPressed conectado en WireButtons().
         public void Confirm()
         {
+            API.Log("[PortalMod] Confirm() ejecutado - tag: " + (_tagInput != null ? _tagInput.Text : "null"));
+
             var tag = _tagInput != null ? _tagInput.Text?.Trim() : null;
 
             if (string.IsNullOrEmpty(tag))
@@ -276,7 +278,7 @@ namespace PortalMod
             CloseWindow();
         }
 
-        // Invocado desde el boton "cancelButton" via el OnPress conectado en WireButtons().
+        // Invocado desde el boton "cancelButton" via el OnPressed conectado en WireButtons().
         public void Cancel()
         {
             CloseWindow();
