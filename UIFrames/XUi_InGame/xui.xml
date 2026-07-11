@@ -5,17 +5,19 @@
       es necesario ademas de windows.xml: en V3.0, XUi.SetXmlsForUi carga
       en orden "XUi_InGame/windows" y luego "XUi_InGame/xui" (confirmado
       decompilando Assembly-CSharp.dll real). windows.xml define la ventana
-      en si (ver ahi el fix del root "<configs><append xpath="/windows">"),
-      pero cada ventana que se abre por nombre via el window manager
+      en si, pero cada ventana que se abre por nombre via el window manager
       (xui.playerUI.windowManager.Open(...), ver XUiPortalTag.OpenWindow)
       tambien necesita estar agrupada en un "window_group" dentro de
-      xui.xml — mismo patron que usan popups vanilla simples sin controller
-      propio (ej. "tipWindow" -> "windowTip", ver Data/Config/XUi_InGame/
-      xui.xml). Se usa el mismo nombre para el grupo y la ventana porque
-      XUiPortalTag.OpenWindow llama a Open(...) con "windowPortalTag".
+      xui.xml. Se usa el mismo nombre para el grupo y la ventana porque
+      XUiPortalTag.OpenWindow llama a Open(...) con "windowPortalTag" (igual
+      que "messageBox" -> grupo y ventana con el mismo nombre en xui.xml
+      vanilla). "defaultselected" apunta al nombre del rect que contiene el
+      control enfocable, no al control mismo — confirmado contra
+      "windowKeypadEdit" (grupo "keypadEdit", defaultselected="content",
+      mismo nombre que el <rect name="content"> que envuelve su textfield).
   -->
   <append xpath="/xui">
-    <window_group name="windowPortalTag" defaultselected="portalTagInput">
+    <window_group name="windowPortalTag" defaultselected="content">
       <window name="windowPortalTag" />
     </window_group>
   </append>
