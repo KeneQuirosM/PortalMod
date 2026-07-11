@@ -1,0 +1,6 @@
+# PortalMod.csproj se personaliza localmente (ruta a la instalacion de
+# 7 Days to Die vía Game7DaysToDiePath/SEVENDAYS_INSTALL_DIR). Se ignora para
+# que "git pull" nunca sobreescriba esa configuracion local en cada PC.
+# Ver Harmony/PortalMod.csproj.template para la plantilla versionada y
+# README.md para las instrucciones de copiado.
+Harmony/PortalMod.csproj

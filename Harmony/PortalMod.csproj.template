@@ -1,14 +1,27 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    PortalMod.csproj
-    Compila el DLL de Harmony para PortalMod (7 Days to Die V3.0 "Dead Hot Summer").
+    PortalMod.csproj.template
+    Plantilla versionada de PortalMod.csproj (compila el DLL de Harmony para
+    PortalMod, 7 Days to Die V3.0 "Dead Hot Summer").
+
+    "Harmony/PortalMod.csproj" esta en .gitignore a proposito: cada persona
+    edita su propia ruta local de instalacion del juego en ese archivo, y no
+    queremos que "git pull" se la sobreescriba con la de otra persona.
 
     COMO USAR:
-      1. Copia/edita `Game7DaysToDiePath` abajo (o define la variable de entorno
-         `SEVENDAYS_INSTALL_DIR`) apuntando a la carpeta raiz de tu instalacion
-         de 7 Days to Die (la que contiene `7DaysToDieServer_Data` o `7DaysToDie_Data`).
-      2. Abre este proyecto en Visual Studio 2022 o JetBrains Rider.
+      0. Copia este archivo a "Harmony/PortalMod.csproj" (mismo directorio,
+         sin ".template" en el nombre).
+      1. En tu copia, edita `Game7DaysToDiePath` abajo (o define la variable
+         de entorno `SEVENDAYS_INSTALL_DIR`, que tiene prioridad y evita tocar
+         el archivo) apuntando a la carpeta raiz de tu instalacion de
+         7 Days to Die (la que contiene `7DaysToDieServer_Data` o
+         `7DaysToDie_Data`). El valor de ejemplo de abajo,
+         "C:\Program Files (x86)\Steam\steamapps\common\7 Days To Die", es la
+         ruta tipica de una instalacion de Steam en Windows — cambiala por la
+         tuya si es distinta.
+      2. Abre "Harmony/PortalMod.csproj" (tu copia) en Visual Studio 2022 o
+         JetBrains Rider.
       3. Compila en Release. El DLL resultante se copia automaticamente a
          `../` (la raiz de PortalMod), es decir junto a ModInfo.xml, para que
          el mod quede listo para copiarse a `Mods/`.
