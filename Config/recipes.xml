@@ -2,15 +2,30 @@
   <!--
       recipes.xml — PortalMod
       Receta de portalBlockItem, crafteable unicamente en workbench.
+
+      FIX real (recipes.xml fallaba al cargar): tres cosas no existen en
+      V3.0, confirmadas contra el recipes.xml vanilla instalado:
+        - craft_tool="toolCraftWorkbenchAdvanced": 0 coincidencias. Los
+          recipes con craft_area="workbench" en vanilla NO llevan
+          craft_tool (ese atributo solo aparece con estaciones especiales
+          como toolBeaker/toolCookingPot/toolForgeCrucible) — se elimina.
+        - tags="craftingFromWorkbenchOnly": 0 coincidencias. El tag real
+          para "solo craftable en workbench, sin necesidad de aprenderlo"
+          es "workbenchCrafting" (confirmado en decenas de recipes vanilla
+          con craft_area="workbench" y sin "learnable").
+        - <property name="craft_time" value="60" /> como nodo hijo: 0
+          coincidencias. "craft_time" es un ATRIBUTO del propio <recipe>,
+          no una property anidada (confirmado en todo el recipes.xml
+          vanilla, ej. craft_time="2.4" en la misma etiqueta que
+          craft_area).
   -->
   <append xpath="/recipes">
 
-    <recipe name="portalBlockItem" count="1" craft_area="workbench" craft_tool="toolCraftWorkbenchAdvanced" tags="craftingFromWorkbenchOnly">
+    <recipe name="portalBlockItem" count="1" craft_time="60" craft_area="workbench" tags="workbenchCrafting">
       <ingredient name="resourceScrapIron" count="1500" />
       <ingredient name="resourceForgedIron" count="450" />
       <ingredient name="resourceElectricParts" count="125" />
       <ingredient name="resourceDuctTape" count="20" />
-      <property name="craft_time" value="60" />
     </recipe>
 
   </append>

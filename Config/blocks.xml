@@ -67,8 +67,17 @@
           confirmados (ej. "treeGib_burnt", "car_destruction_dmg1") que
           requieren su propio asset registrado; no hay uno equivalente
           confirmado para este bloque todavia.
+
+          "DowngradeBlock" value="terrainRubble" tambien se elimina: ese
+          bloque no existe en ninguna parte del blocks.xml vanilla instalado
+          (0 coincidencias, ni siquiera como bloque referenciado por otro
+          "DowngradeBlock"/"UpgradeBlock" real). Causaba el error de carga
+          "Block with name 'terrainRubble' not found in block portalBlock"
+          reportado por item_modifiers.xml. Al ser un property opcional y
+          puramente cosmetico (que se muestra cuando el bloque esta muy
+          danado antes de destruirse), se quita en vez de adivinar un
+          reemplazo, igual que con ParticleOnDestroy arriba.
       -->
-      <property name="DowngradeBlock" value="terrainRubble" />
 
       <!-- Resistencia -->
       <property name="Health" value="4000" />

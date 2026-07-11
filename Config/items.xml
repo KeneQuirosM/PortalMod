@@ -3,6 +3,29 @@
       items.xml — PortalMod
       Item craftable que coloca el bloque portalBlock en el mundo.
 
+      FIX real (items.xml fallaba al cargar): tres propiedades de este item
+      no existen en V3.0, confirmadas contra el items.xml vanilla instalado:
+        - "Extends" value="baseFullBlockPlaceHolder": ese item no existe en
+          ningun lugar del items.xml vanilla (0 coincidencias de
+          "placeholder"/"fullblock" en todo el archivo). Se elimina; no hace
+          falta extender nada para un item que solo coloca un bloque — el
+          ejemplo vanilla mas cercano ("candle", que tambien usa Action
+          Class="PlaceAsBlock") no extiende ningun item base tampoco.
+        - Action0 Class="Place" + property "Block"="portalBlock": ninguna de
+          las dos existe (0 coincidencias de Class="Place" y de una property
+          "Block" en items.xml vanilla). La clase de accion real, confirmada
+          por reflection contra Assembly-CSharp.dll (tipo ItemActionPlaceAsBlock)
+          y por el uso real en items.xml vanilla (ej. "wallTorchLightPlayer",
+          "candleWallLightPlayer"), es Class="PlaceAsBlock" con una property
+          "Blockname" (no "Block") apuntando al nombre del bloque.
+        - triggered_effect PlaySound sound="place_wood": ese sonido no esta
+          registrado en el sounds.xml vanilla (0 coincidencias). El sonido de
+          colocacion en V3.0 no se dispara via triggered_effect sino con la
+          property dedicada "SoundPlace" a nivel item (patron confirmado en
+          decenas de items vanilla). Se usa "forgedmetal_place" (confirmado
+          registrado en sounds.xml vanilla), acorde al tema de scrap/metal
+          forjado de la receta (ver recipes.xml).
+
       NOTA sobre gupPortKeyCard: el mapeo de assets del mod reserva el icono
       "gupPortKeyCard" para un futuro item tipo "llave/tarjeta" (no existe
       ningun item de ese tipo en el mod todavia — solo portalBlockItem esta
@@ -15,15 +38,14 @@
   <append xpath="/items">
 
     <item name="portalBlockItem">
-      <property name="Extends" value="baseFullBlockPlaceHolder" />
 
       <!--
           Modelo 3D en mano/inventario: bundle gupPortKeyCard.unity3d.
           Nombre de prefab CONFIRMADO contra el XML original del mod de
           assets (SCore): guppyPortKeyCard.prefab. "Meshfile" (mas
-          "DropMeshfile" para el mesh tirado en el suelo) se confirmo como la
-          propiedad correcta para este mesh en items que extienden
-          "baseFullBlockPlaceHolder".
+          "DropMeshfile" para el mesh tirado en el suelo) es la propiedad
+          correcta para este mesh (confirmada por uso extensivo en items.xml
+          vanilla).
       -->
       <property name="Meshfile" value="#@modfolder:Resources/gupPortKeyCard.unity3d?guppyPortKeyCard.prefab" />
       <property name="DropMeshfile" value="#@modfolder:Resources/gupPortKeyCard.unity3d?guppyPortKeyCard.prefab" />
@@ -31,10 +53,12 @@
       <!--
           Icono de inventario (2D): guppyFuturePortal6, sin extension (asi lo
           lee 7D2D — el resolvedor de iconos busca el .png dentro de
-          Resources/ItemIcons/ por nombre).
-          TODO: marcar si la propiedad exacta de icono difiere en V3.0 (por
-          ejemplo si requiere "IconAtlas" o "CustomIconAtlas" ademas de
-          CustomIcon segun de que atlas se cargue en tiempo de ejecucion).
+          Resources/ItemIcons/ por nombre). Sintaxis "CustomIcon"/
+          "CustomIconTint" confirmada identica contra items.xml vanilla (no
+          existe "IconAtlas"/"CustomIconAtlas" en ningun item vanilla). El
+          .png correspondiente ya existe en Resources/ItemIcons/
+          guppyFuturePortal6.png — el icono no aparecia simplemente porque
+          este item nunca llegaba a cargar (ver FIX real arriba).
       -->
       <property name="CustomIcon" value="guppyFuturePortal6" />
       <property name="CustomIconTint" value="ffffffff" />
@@ -44,16 +68,12 @@
       <property name="Stacknumber" value="10" />
       <property name="EconomicValue" value="800" />
       <property name="EconomicBundleSize" value="1" />
+      <property name="SoundPlace" value="forgedmetal_place" />
 
       <property class="Action0">
-        <property name="Class" value="Place" />
+        <property name="Class" value="PlaceAsBlock" />
+        <property name="Blockname" value="portalBlock" />
       </property>
-
-      <property name="Block" value="portalBlock" />
-
-      <effect_group name="Item Modifiers">
-        <triggered_effect trigger="onSelfPrimaryActionEnd" action="PlaySound" sound="place_wood" />
-      </effect_group>
     </item>
 
   </append>
