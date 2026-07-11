@@ -18,6 +18,14 @@
           no una property anidada (confirmado en todo el recipes.xml
           vanilla, ej. craft_time="2.4" en la misma etiqueta que
           craft_area).
+
+      NOTA (log posterior): recipes.xml seguia fallando con "No item/block
+      with name 'portalBlockItem' existing" (RecipesFromXml.LoadRecipies)
+      despues de lo de arriba. Causa real: items.xml fallaba al cargar por
+      una property "Material" faltante (ver FIX en items.xml), asi que
+      "portalBlockItem" nunca llegaba a crearse — este archivo en si ya
+      estaba bien. Con items.xml corregido, "portalBlockItem" existe y esta
+      receta lo encuentra normalmente.
   -->
   <append xpath="/recipes">
 

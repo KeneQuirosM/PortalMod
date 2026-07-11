@@ -11,6 +11,19 @@
           falta extender nada para un item que solo coloca un bloque — el
           ejemplo vanilla mas cercano ("candle", que tambien usa Action
           Class="PlaceAsBlock") no extiende ningun item base tampoco.
+          IMPORTANTE: al quitar "Extends" tambien se perdio la property
+          "Material" que se heredaba de ahi, y esa property es OBLIGATORIA
+          para TODO item sin excepcion — confirmado decompilando
+          ItemClassesFromXml.parseItem contra el Assembly-CSharp.dll real:
+          "if (!dynamicProperties.Values.ContainsKey(\"Material\")) throw
+          new Exception(\"Attribute 'material' missing on item '\" +
+          attribute + \"'\");". Esto causaba el error real de carga
+          ("Attribute 'material' missing on item 'portalBlockItem'"), que a
+          su vez hacia fallar recipes.xml con "No item/block with name
+          'portalBlockItem' existing" (el item nunca llegaba a crearse). Se
+          agrega <property name="Material" value="Mmetal" /> explicitamente
+          (mismo material que el bloque portalBlock, confirmado como
+          material real de item valido — 9+ items vanilla lo usan).
         - Action0 Class="Place" + property "Block"="portalBlock": ninguna de
           las dos existe (0 coincidencias de Class="Place" y de una property
           "Block" en items.xml vanilla). La clase de accion real, confirmada
@@ -49,6 +62,9 @@
       -->
       <property name="Meshfile" value="#@modfolder:Resources/gupPortKeyCard.unity3d?guppyPortKeyCard.prefab" />
       <property name="DropMeshfile" value="#@modfolder:Resources/gupPortKeyCard.unity3d?guppyPortKeyCard.prefab" />
+
+      <!-- Obligatoria para todo item en V3.0 (ver FIX real arriba) -->
+      <property name="Material" value="Mmetal" />
 
       <!--
           Icono de inventario (2D): guppyFuturePortal6, sin extension (asi lo
