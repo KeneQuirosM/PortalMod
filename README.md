@@ -24,8 +24,8 @@ madre/hijo — cualquier portal es válido como origen o destino.
    - Windows: `<ruta de instalación>\Mods\PortalMod\`
    - Linux (servidor dedicado): `<ruta de instalación>/Mods/PortalMod/`
 3. Verifica que la carpeta `Mods/PortalMod/` contenga al menos:
-   `ModInfo.xml`, `Config/`, `PortalMod.dll` (generado al compilar) y
-   `UIFrames/`.
+   `ModInfo.xml`, `Config/` (incluye `Config/XUi_InGame/`) y `PortalMod.dll`
+   (generado al compilar).
 4. Desactiva EAC y arranca el juego / servidor. Si el mod cargó
    correctamente, verás en la consola (F1 o log del servidor) líneas con el
    prefijo `[PortalMod]`.
@@ -110,8 +110,11 @@ mismo tag.
 ## Notas técnicas — específicas de V3.0
 
 - **XUi_InGame, no `XUi`**: la carpeta de interfaces de este mod vive en
-  `UIFrames/XUi_InGame/`, siguiendo la convención de carpetas introducida
-  antes de V1.0 (reemplaza a la antigua `XUi/`).
+  `Config/XUi_InGame/` (reemplaza a la antigua `XUi/` de builds pre-V1.0).
+  Los parches de mod para CUALQUIER archivo, incluidos los de XUi, siempre
+  se buscan bajo `Config/` — no existe una carpeta `UIFrames/` en la
+  búsqueda de patches del juego (confirmado decompilando
+  `XmlPatcher.LoadAndPatchConfig`).
 - **`templates.xml`, no `controls.xml`**: si necesitas definir un control XUi
   totalmente nuevo (no solo reutilizar los existentes), debe declararse en
   `templates.xml`, no en el `controls.xml` de builds pre-A20.
@@ -136,7 +139,10 @@ PortalMod/
 │   ├── recipes.xml         Receta de workbench
 │   ├── buffs.xml           buffPortalTravel
 │   ├── sounds.xml          SoundDataNode "guppyKeyUsed" (sonido de activacion)
-│   └── localization.txt    Strings en english / Spanish (es-ES)
+│   ├── localization.txt    Strings en english / Spanish (es-ES)
+│   └── XUi_InGame/
+│       ├── windows.xml     Ventana popup "Nombrar portal" (windowPortalTag)
+│       └── xui.xml         window_group que registra windowPortalTag
 ├── Harmony/
 │   ├── PortalMod.csproj.template   Plantilla versionada (copiar, ver abajo)
 │   ├── PortalMod.csproj            Copia local, en .gitignore, NO versionado
@@ -148,9 +154,6 @@ PortalMod/
 │       ├── PortalVisualFX.cs   Luz/particulas por estado + rafagas de teletransporte
 │       ├── XUiPortalTag.cs     Controller de la ventana de nombre de tag
 │       └── PortalUtils.cs      Helpers compartidos (identidad de jugador, HUD)
-├── UIFrames/
-│   └── XUi_InGame/
-│       └── windows.xml     Ventana popup "Nombrar portal"
 └── Resources/
     ├── gupFuturePortal1.unity3d   Modelo 3D: portalBlock estado INACTIVO
     ├── gupFuturePortal6.unity3d   Modelo 3D: portalBlock estado ACTIVO

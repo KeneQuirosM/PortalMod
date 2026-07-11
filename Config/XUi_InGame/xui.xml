@@ -1,9 +1,20 @@
 <configs>
   <!--
       xui.xml — PortalMod
-      Carpeta: UIFrames/XUi_InGame/. Este archivo NO existia en el mod, y
-      es necesario ademas de windows.xml: en V3.0, XUi.SetXmlsForUi carga
-      en orden "XUi_InGame/windows" y luego "XUi_InGame/xui" (confirmado
+
+      FIX real (causa raiz de que la ventana nunca se registrara, ver
+      Config/XUi_InGame/windows.xml para el detalle completo): la carpeta
+      correcta para CUALQUIER patch de mod es siempre "Config/<ruta>",
+      confirmado decompilando XmlPatcher.LoadAndPatchConfig contra el
+      Assembly-CSharp.dll real ("loadedMod.Path + \"/Config/\" +
+      _configName"). No existe una carpeta "UIFrames" en la busqueda de
+      patches del juego; este archivo vivia ahi por error y el juego nunca
+      lo encontraba (fallaba silenciosamente, sin loguear nada). Movido a
+      "Config/XUi_InGame/xui.xml".
+
+      Este archivo NO existia originalmente en el mod, y es necesario
+      ademas de windows.xml: en V3.0, XUi.SetXmlsForUi carga en orden
+      "XUi_InGame/windows" y luego "XUi_InGame/xui" (confirmado
       decompilando Assembly-CSharp.dll real). windows.xml define la ventana
       en si, pero cada ventana que se abre por nombre via el window manager
       (xui.playerUI.windowManager.Open(...), ver XUiPortalTag.OpenWindow)

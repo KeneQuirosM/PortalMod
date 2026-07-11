@@ -7,7 +7,7 @@ namespace PortalMod
 {
     /// <summary>
     /// Controller XUi para la ventana "windowPortalTag" (ver
-    /// UIFrames/XUi_InGame/windows.xml). Usa el sistema de binding de XUi
+    /// Config/XUi_InGame/windows.xml). Usa el sistema de binding de XUi
     /// V3.0: la ventana usa el atributo "visible" (no "force_hide") y los
     /// valores se resuelven via GetBindingValue en vez del antiguo sistema de
     /// controls.xml.
@@ -157,7 +157,7 @@ namespace PortalMod
             var window = xui.GetWindow(WindowName);
             if (window == null)
             {
-                API.LogWarning($"No se encontro la ventana XUi '{WindowName}'. Revisa UIFrames/XUi_InGame/windows.xml.");
+                API.LogWarning($"No se encontro la ventana XUi '{WindowName}'. Revisa Config/XUi_InGame/windows.xml.");
                 return;
             }
 

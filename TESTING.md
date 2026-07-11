@@ -43,7 +43,7 @@ está pendiente de verificación real**.
 ## 4. Pruebas de colocación
 
 - [ ] Al colocar el `portalBlock` aparece la ventana de nombrado
-      (`windowPortalTag`, ver `UIFrames/XUi_InGame/windows.xml`).
+      (`windowPortalTag`, ver `Config/XUi_InGame/windows.xml`).
 - [ ] Se puede escribir un tag y confirmar.
 - [ ] El modelo 3D `gupFuturePortal1` (inactivo) se ve en el mundo.
 - [ ] El portal queda registrado como huérfano correctamente (un solo

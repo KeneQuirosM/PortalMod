@@ -1,17 +1,29 @@
 <configs>
   <!--
       windows.xml — PortalMod
-      Carpeta: UIFrames/XUi_InGame/  (NO "XUi", ese nombre quedo deprecado
-      antes de V1.0). En V3.0 la visibilidad de ventanas/controles se maneja
-      con el atributo "visible" (bindeable, ej. visible="{portaltag.isopen}")
-      en lugar del antiguo "force_hide" de builds pre-A20.
 
-      FIX real #1 (root de parcheo): el root de este archivo era
-      "<xml>...</xml>", pero TODOS los archivos de patch de mod en V3.0
-      (incluidos los de XUi_InGame) usan el mismo envoltorio de parcheo
-      "<configs><append xpath="...">...</append></configs>", sin importar
-      cual sea el root real del archivo base (aqui "<windows>"). Ya
-      corregido en un commit anterior.
+      FIX real #0 (LA CAUSA RAIZ de todos los intentos anteriores — la
+      ventana seguia "sin encontrarse" incluso con la estructura interna ya
+      corregida atributo por atributo): la carpeta era
+      "UIFrames/XUi_InGame/", que NO es una ruta que el juego revise jamas
+      para parches de mod. Decompilando XmlPatcher.LoadAndPatchConfig contra
+      el Assembly-CSharp.dll real se confirmo que, para CUALQUIER
+      _configName (incluidos "XUi_InGame/windows" y "XUi_InGame/xui"), el
+      juego busca el patch de cada mod cargado en:
+          loadedMod.Path + "/Config/" + _configName
+      Es decir, exactamente el mismo prefijo "Config/" que blocks.xml,
+      buffs.xml, items.xml, etc. — no existe ninguna carpeta "UIFrames" en
+      la busqueda de patches. Con el archivo en "UIFrames/", el juego nunca
+      encontraba este patch (SdFile.Exists(...) devolvia false y el bucle
+      seguia con "continue" sin loguear nada), asi que "XUi_InGame/windows"
+      cargaba solo el archivo BASE vanilla, sin fusionar windowPortalTag —
+      de ahi que no hubiera ningun error en el log (el archivo base carga
+      bien) y que la ventana simplemente no existiera nunca. Movido a
+      "Config/XUi_InGame/windows.xml" (ruta real).
+
+      En V3.0 la visibilidad de ventanas/controles se maneja con el
+      atributo "visible" (bindeable, ej. visible="{portaltag.isopen}") en
+      lugar del antiguo "force_hide" de builds pre-A20.
 
       FIX real #2 (la ventana seguia sin encontrarse aun con el root ya
       corregido): comparando atributo por atributo contra
