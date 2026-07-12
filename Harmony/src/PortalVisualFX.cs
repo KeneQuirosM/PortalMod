@@ -20,9 +20,12 @@ namespace PortalMod
     ///    en el ambient tick — ver FIX real mas abajo sobre por que.
     ///
     ///  - Particulas ambientales (idle) y de rafaga de teletransporte:
-    ///    reutilizan nombres de particulas YA EXISTENTES en el juego base
-    ///    ("p_electric_shock", "p_sparks_fuse"), confirmados con grep contra
-    ///    los XML vanilla instalados (usados ahi en atributos particle="...").
+    ///    usan "electric_fence_sparks", el UNICO nombre tematicamente
+    ///    electrico confirmado real para la API que usa este archivo
+    ///    (GameManager.SpawnParticleEffectServer/ParticleEffect) — ver FIX
+    ///    real en SpawnParticleServer sobre por que los nombres usados
+    ///    antes ("p_electric_shock"/"p_sparks_fuse", validos pero de un
+    ///    sistema de particulas DISTINTO) nunca funcionaban aqui.
     ///
     /// FIX real (el portal perdia la conexion de cable constantemente,
     /// Feature "requiere electricidad" — portalBlock ahora es Class="Powered"
@@ -232,14 +235,15 @@ namespace PortalMod
         {
             var worldPos = new Vector3(blockPos.x + 0.5f, blockPos.y + 1f, blockPos.z + 0.5f);
 
-            // Nombres de particula CONFIRMADOS como reales (grep contra
-            // Data/Config/*.xml vanilla instalado, usados ahi en atributos
-            // particle="..." de verdad): "p_electric_shock" para el estado
-            // vinculado+con energia, "p_sparks_fuse" (mas sutil) para
-            // huerfano/sin energia.
-            var particleName = intense ? "p_electric_shock" : "p_sparks_fuse";
-
-            SpawnParticleServer(particleName, worldPos);
+            // FIX real (particulas invisibles pese a que "p_electric_shock"/
+            // "p_sparks_fuse" son nombres reales — ver FIX real de
+            // SpawnParticleServer mas abajo sobre POR QUE igual fallaban):
+            // se usa el mismo nombre confirmado para ambos estados
+            // (intenso/escaso), diferenciados solo por la frecuencia de
+            // disparo (ver AmbientTick — cada 0.6s vs cada ~2.4s), ya que es
+            // el UNICO nombre tematicamente electrico confirmado real para
+            // esta API especifica (ver FIX real abajo).
+            SpawnParticleServer("electric_fence_sparks", worldPos);
         }
 
         // ========================================================================
@@ -256,15 +260,56 @@ namespace PortalMod
         {
             var worldPos = new Vector3(blockPos.x + 0.5f, blockPos.y + 1f, blockPos.z + 0.5f);
 
-            // Mismo nombre confirmado que el estado intenso (ver SpawnAmbientParticle).
-            SpawnParticleServer("p_electric_shock", worldPos);
+            // Mismo nombre confirmado que el ambiental (ver SpawnAmbientParticle y FIX real abajo).
+            SpawnParticleServer("electric_fence_sparks", worldPos);
         }
 
-        // FIX real ("Unknown particle effect: 0" repitiendose cada ambient tick,
-        // ~cada 0.6s por portal): decompilando ParticleEffect.GetDynamicTransform
-        // contra el Assembly-CSharp.dll real se confirmo que ese log se dispara
-        // cuando "ParticleId" (un int) no esta en la tabla de particulas
-        // cargadas. El constructor real que si asigna "ParticleId = ToId(_name)" es:
+        // FIX real ("Unknown particle effect: <hash>" para nuestras propias
+        // llamadas, particulas nunca visibles pese a compilar sin errores):
+        // "p_electric_shock"/"p_sparks_fuse" (usados antes) SI son nombres
+        // reales — confirmado de nuevo por grep contra buffs.xml/items.xml
+        // vanilla instalados — pero pertenecen a un sistema de particulas
+        // COMPLETAMENTE DISTINTO al que usa esta clase. Decompilando el
+        // Assembly-CSharp.dll real se confirmaron DOS sistemas separados:
+        //   1) El que usan los <triggered_effect action="AttachParticleEffectToEntity"
+        //      particle="p_electric_shock"> de buffs.xml/items.xml vanilla
+        //      (clase MinEventActionAttachParticleEffectToEntity): carga el
+        //      addressable "ParticleEffects/<nombre-con-prefijo>.prefab"
+        //      DIRECTO por ruta completa (con el prefijo "p_" incluido, sin
+        //      strippearlo) y lo instancia como hijo de la entidad. NO pasa
+        //      por ParticleEffect.ToId()/loadedTs en ningun momento.
+        //   2) El que usa GameManager.SpawnParticleEffectServer/ParticleEffect
+        //      (el que usa este archivo): decompilando
+        //      ParticleEffect.LoadResources() se confirmo que precarga TODOS
+        //      los assets bajo la etiqueta Addressables "particleeffects"
+        //      (minuscula, catalogo DISTINTO al "ParticleEffects/..." de
+        //      arriba) cuyo nombre de archivo empieza con el prefijo "p_", y
+        //      registra cada uno en el diccionario "loadedTs" bajo
+        //      ToId(nombre SIN el prefijo "p_") — es decir, para este
+        //      sistema especifico el nombre que hay que pasarle al
+        //      constructor de ParticleEffect va SIN "p_". "p_electric_shock"
+        //      no es necesariamente (ni probablemente) un asset del
+        //      catalogo "particleeffects" en absoluto — pertenece al otro
+        //      catalogo ("ParticleEffects/..."), por eso GetDynamicTransform
+        //      nunca lo encontraba en loadedTs sin importar el prefijo.
+        //
+        //      Se busco en TODO Assembly-CSharp.dll cada llamada real a
+        //      "new ParticleEffect(<string literal>, ...)" (la MISMA firma
+        //      que usa este archivo) para obtener nombres 100% confirmados
+        //      de ESTE catalogo especifico. De los 17 nombres unicos
+        //      encontrados (blood_impact, electric_fence_sparks, big_smoke,
+        //      drone_heal_beam/player, nozzleflashuzi/nozzlesmokeuzi,
+        //      blood_eat, confetti, smoke, blockdestroy_<material>,
+        //      treefall, twitch_fireworks, supply_crate_impact,
+        //      impact_metal_on_wood, paint_block, tiresmoke),
+        //      "electric_fence_sparks" (usado en ElectricWireController y
+        //      SpinningBladeTrapController, sistemas electricos reales en
+        //      juego) es el UNICO tematicamente electrico/de energia — se
+        //      usa aqui para ambos estados (intenso/escaso), diferenciados
+        //      solo por frecuencia de disparo.
+        //
+        // El resto de la mecanica ya estaba bien confirmada: el constructor
+        // real que asigna "ParticleId = ToId(_name)" es:
         //   ParticleEffect(string _name, Vector3 _pos, float _lightValue,
         //       Color _color, string _soundName, Transform _parentTransform,
         //       bool _OLDCreateColliders, float _volumeScale = 1f,
