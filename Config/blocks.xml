@@ -111,15 +111,16 @@
           intercambia en runtime mediante World.SetBlockRPC cuando
           PortalManager detecta que el par fue encontrado.
 
-          Aqui se define un unico modelo base (portalBlock, gupFuturePortal1)
-          y se dejan "portalBlockActive" / "portalBlockActivePulseHigh" como
+          Aqui se define el modelo base (portalBlock, gupFuturePortal1) y se
+          dejan "portalBlockActive" / "portalBlockActivePulseHigh" como
           bloques alternativos que PortalVisualFX.cs (Harmony/src) aplica con
           World.SetBlockRPC() al vincularse/desvincularse el par y, para el
           pulso, alternando entre las dos variantes activas en cada ambient
-          tick (~0.6s). Las tres variantes usan el MISMO modelo
-          (gupFuturePortal1 — ver FIX real en "portalBlockActive" mas abajo
-          sobre por que se dejo de usar gupFuturePortal6) y se diferencian
-          solo por "Light"/"TintColor".
+          tick (~0.6s). El estado INACTIVO usa gupFuturePortal1 y el estado
+          ACTIVO (ambas fases del pulso) usa gupFuturePortal6 — ver FIX real
+          en "portalBlockActive" mas abajo sobre las particulas rotas de ese
+          modelo y por que ya no es un problema real — ademas de
+          diferenciarse por "Light"/"TintColor".
       -->
 
       <!--
@@ -169,20 +170,23 @@
         (huerfano/vinculado) siempre vive en PortalManager - este bloque es
         puramente cosmetico y es aplicado por PortalVisualFX.SetBlockState().
 
-        FIX real (errores "Unknown particle effect: <hash>" en el log,
-        spam constante con el portal activo): el modelo gupFuturePortal6.unity3d
-        tiene particulas internas propias del AssetBundle (no controladas por
-        este mod ni por buffs.xml/PortalVisualFX.cs — ya se descarto esa
-        fuente en un fix anterior) que fallan al resolverse en V3.0. No se
-        puede editar el bundle, asi que se usa el mismo modelo simple del
-        estado inactivo (gupFuturePortal1.unity3d) para el estado activo
-        tambien; la diferencia visual "encendido" ahora la dan unicamente
-        "Light" (mas brillante) y "TintColor" (azul-morado) de abajo, sin
-        depender de las particulas rotas del modelo 6.
+        MODELO restaurado a gupFuturePortal6.unity3d?guppyFuturePortal6.prefab
+        (el diseñado para el estado activo). Historial: este modelo tiene
+        particulas internas propias del AssetBundle (no controladas por este
+        mod ni por buffs.xml/PortalVisualFX.cs) que fallan al resolverse en
+        V3.0 y generaban spam constante de "Unknown particle effect: <hash>"
+        en el log — por eso se habia cambiado temporalmente al modelo simple
+        del estado inactivo (gupFuturePortal1.unity3d). Confirmado que no
+        afectaba el rendimiento (112 FPS estable), asi que en vez de resignar
+        el modelo correcto se filtro el mensaje en su origen: LogFilterPatch.cs
+        (Harmony Prefix sobre Log.Error(string)) descarta cualquier linea que
+        contenga "Unknown particle effect" antes de que se escriba al log —
+        ver TESTING.md seccion 10.2. Con eso ya no hace falta evitar este
+        modelo.
     -->
     <block name="portalBlockActive">
       <property name="Extends" value="portalBlock" />
-      <property name="Model" value="#@modfolder:Resources/gupFuturePortal1.unity3d?guppyFuturePortal1.prefab" />
+      <property name="Model" value="#@modfolder:Resources/gupFuturePortal6.unity3d?guppyFuturePortal6.prefab" />
       <property name="DescriptionKey" value="portalBlockActiveDesc" />
 
       <!--

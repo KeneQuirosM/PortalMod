@@ -156,8 +156,8 @@ PortalMod/
 │       ├── XUiPortalTag.cs     Controller de la ventana de nombre de tag
 │       └── PortalUtils.cs      Helpers compartidos (identidad de jugador, HUD)
 ├── Resources/
-│   ├── gupFuturePortal1.unity3d   Modelo 3D: portalBlock (inactivo Y activo, ver blocks.xml)
-│   ├── gupFuturePortal6.unity3d   Sin usar como Model (particulas internas rotas, ver blocks.xml)
+│   ├── gupFuturePortal1.unity3d   Modelo 3D: portalBlock (estado inactivo)
+│   ├── gupFuturePortal6.unity3d   Modelo 3D: portalBlockActive (estado activo, ver blocks.xml)
 │   ├── gupFuturePortal4.unity3d   Efecto de particulas: teletransporte
 │   ├── gupPortKeyCard.unity3d     Modelo 3D: portalBlockItem (mesh en mano)
 │   ├── gupKeyCardSound.unity3d    Sonido: activacion del portal
