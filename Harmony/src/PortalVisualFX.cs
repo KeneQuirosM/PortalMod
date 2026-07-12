@@ -7,9 +7,12 @@ namespace PortalMod
     /// AssetBundles externos que no formen ya parte de Resources/):
     ///
     ///  - Cambio de modelo/color: se resuelve intercambiando el BlockValue
-    ///    del bloque colocado entre "portalBlock" (huerfano) y la variante
-    ///    del bioma correspondiente (vinculado — ver PortalBiomes), los
-    ///    nombres de bloque son variantes del mismo bloque base definidas en
+    ///    del bloque colocado entre el bloque inactivo del ESTILO del
+    ///    portal (huerfano — Feature "Opcion A: 6 items separados", el
+    ///    estilo se elige al craftear/colocar el item, ver PortalManager.
+    ///    GetStyle) y la variante de ese mismo estilo para el bioma
+    ///    correspondiente (vinculado — ver PortalBiomes), los nombres de
+    ///    bloque son variantes del mismo bloque base definidas en
     ///    blocks.xml, cada una con sus propias propiedades Model/Light/
     ///    TintColor. Este swap SOLO ocurre al vincularse/desvincularse un
     ///    par (RegisterPortal/UnregisterPortal en PortalManager.cs), NUNCA
@@ -95,29 +98,32 @@ namespace PortalMod
 
         /// <summary>
         /// Reevalua y aplica el bloque correcto para una posicion de portal:
-        /// variante del bioma si esta vinculado, o el bloque base
-        /// "portalBlock" (huerfano) si no. Se llama SOLO al vincularse/
+        /// variante del ESTILO+bioma (Feature "Opcion A: 6 items separados",
+        /// ver PortalBiomes) si esta vinculado, o el bloque inactivo del
+        /// mismo estilo (huerfano) si no. Se llama SOLO al vincularse/
         /// desvincularse un par (PortalManager.RegisterPortal/
         /// UnregisterPortal) — nunca desde el ambient tick, ver FIX real de
         /// la clase.
         /// </summary>
         internal static void RefreshBlockState(Vector3i pos, bool linked)
         {
+            var style = PortalManager.Instance.GetStyle(pos);
+
             // Diagnostico ("el portal se ve apagado aunque tenga energia"):
             // este es el UNICO lugar donde el modelo del portal cambia (ver
             // FIX real de la clase). Si el log de aqui no aparece al
             // vincular un par, el bug no es de energia sino de que
             // RegisterPortal nunca llego a llamar esto.
-            API.Log($"[PortalMod] RefreshBlockState pos={pos} linked={linked}");
+            API.Log($"[PortalMod] RefreshBlockState pos={pos} linked={linked} style={style ?? "(default/legacy)"}");
 
             if (linked)
             {
                 var biome = PortalManager.Instance.GetBiome(pos);
-                SetBlockState(pos, BlockState.Active, biome);
+                SetBlockState(pos, BlockState.Active, biome, style);
             }
             else
             {
-                SetBlockState(pos, BlockState.Inactive, null);
+                SetBlockState(pos, BlockState.Inactive, null, style);
             }
         }
 
@@ -126,7 +132,7 @@ namespace PortalMod
         /// correspondiente. No hace nada si el bloque ya esta en ese estado
         /// (evita trafico de red / desconexiones de cable innecesarias).
         /// </summary>
-        private static void SetBlockState(Vector3i pos, BlockState state, string biome)
+        private static void SetBlockState(Vector3i pos, BlockState state, string biome, string style)
         {
             var world = GameManager.Instance != null ? GameManager.Instance.World : null;
             if (world == null)
@@ -135,8 +141,8 @@ namespace PortalMod
             }
 
             var targetName = state == BlockState.Inactive
-                ? PortalBiomes.InactiveBlockName
-                : PortalBiomes.GetActiveBlockName(biome);
+                ? PortalBiomes.GetInactiveBlockName(style)
+                : PortalBiomes.GetActiveBlockName(style, biome);
 
             // TODO: verificar en Assembly-CSharp V3.0 la API real para resolver
             // un Block por nombre y construir su BlockValue. Candidato de builds

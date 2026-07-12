@@ -101,5 +101,137 @@
       </property>
     </item>
 
+    <!-- ================= ESTILOS DE PORTAL (Opcion A: 6 items separados) =================
+        Feature: 6 items independientes, cada uno coloca un ESTILO de
+        portal con modelo 3D distinto (ver Config/blocks.xml, seccion
+        "ESTILOS DE PORTAL"), manteniendo el sistema de color-por-bioma
+        existente. portalBlockItem (arriba) se conserva sin cambios como
+        opcion adicional ("legacy") — no se elimina, para no romper mundos
+        ya guardados que dependan de el.
+
+        FIX real (colision de nombre item/bloque): el pedido original nombra
+        el ITEM igual que el BLOQUE (ej. "portalBlock_platform" para
+        ambos). En V3.0 los items y bloques comparten un unico namespace
+        plano de nombres (confirmado por el patron ya establecido en este
+        mismo mod: el item se llama "portalBlockItem", NO "portalBlock",
+        precisamente para no colisionar con el bloque "portalBlock") — dos
+        entradas con el mismo "name" (una en items.xml, otra en blocks.xml)
+        no pueden coexistir. Se le agrega el sufijo "Item" a cada nombre de
+        item (igual que el patron ya usado por portalBlockItem/portalBlock),
+        dejando el BLOQUE con el nombre exacto pedido.
+
+        Todos comparten la misma estructura que portalBlockItem (mismo
+        Meshfile/Material/HoldType/Group/Stacknumber/EconomicValue/
+        SoundPlace), solo cambia CustomIcon y el Blockname de Action0.
+    -->
+
+    <item name="portalBlock_platformItem">
+      <property name="Meshfile" value="#@modfolder:Resources/gupPortKeyCard.unity3d?guppyPortKeyCard.prefab" />
+      <property name="DropMeshfile" value="#@modfolder:Resources/gupPortKeyCard.unity3d?guppyPortKeyCard.prefab" />
+      <property name="Material" value="Mmetal" />
+      <property name="CustomIcon" value="guppyFuturePortal1" />
+      <property name="CustomIconTint" value="ffffffff" />
+      <property name="HoldType" value="47" />
+      <property name="Group" value="Building" />
+      <property name="Stacknumber" value="10" />
+      <property name="EconomicValue" value="800" />
+      <property name="EconomicBundleSize" value="1" />
+      <property name="SoundPlace" value="forgedmetal_place" />
+      <property class="Action0">
+        <property name="Class" value="PlaceAsBlock" />
+        <property name="Blockname" value="portalBlock_platform" />
+      </property>
+    </item>
+
+    <item name="portalBlock_gridItem">
+      <property name="Meshfile" value="#@modfolder:Resources/gupPortKeyCard.unity3d?guppyPortKeyCard.prefab" />
+      <property name="DropMeshfile" value="#@modfolder:Resources/gupPortKeyCard.unity3d?guppyPortKeyCard.prefab" />
+      <property name="Material" value="Mmetal" />
+      <property name="CustomIcon" value="guppyFuturePortal2" />
+      <property name="CustomIconTint" value="ffffffff" />
+      <property name="HoldType" value="47" />
+      <property name="Group" value="Building" />
+      <property name="Stacknumber" value="10" />
+      <property name="EconomicValue" value="800" />
+      <property name="EconomicBundleSize" value="1" />
+      <property name="SoundPlace" value="forgedmetal_place" />
+      <property class="Action0">
+        <property name="Class" value="PlaceAsBlock" />
+        <property name="Blockname" value="portalBlock_grid" />
+      </property>
+    </item>
+
+    <item name="portalBlock_clawsItem">
+      <property name="Meshfile" value="#@modfolder:Resources/gupPortKeyCard.unity3d?guppyPortKeyCard.prefab" />
+      <property name="DropMeshfile" value="#@modfolder:Resources/gupPortKeyCard.unity3d?guppyPortKeyCard.prefab" />
+      <property name="Material" value="Mmetal" />
+      <property name="CustomIcon" value="guppyFuturePortal3" />
+      <property name="CustomIconTint" value="ffffffff" />
+      <property name="HoldType" value="47" />
+      <property name="Group" value="Building" />
+      <property name="Stacknumber" value="10" />
+      <property name="EconomicValue" value="800" />
+      <property name="EconomicBundleSize" value="1" />
+      <property name="SoundPlace" value="forgedmetal_place" />
+      <property class="Action0">
+        <property name="Class" value="PlaceAsBlock" />
+        <property name="Blockname" value="portalBlock_claws" />
+      </property>
+    </item>
+
+    <item name="portalBlock_cylinderItem">
+      <property name="Meshfile" value="#@modfolder:Resources/gupPortKeyCard.unity3d?guppyPortKeyCard.prefab" />
+      <property name="DropMeshfile" value="#@modfolder:Resources/gupPortKeyCard.unity3d?guppyPortKeyCard.prefab" />
+      <property name="Material" value="Mmetal" />
+      <property name="CustomIcon" value="guppyFuturePortal4" />
+      <property name="CustomIconTint" value="ffffffff" />
+      <property name="HoldType" value="47" />
+      <property name="Group" value="Building" />
+      <property name="Stacknumber" value="10" />
+      <property name="EconomicValue" value="800" />
+      <property name="EconomicBundleSize" value="1" />
+      <property name="SoundPlace" value="forgedmetal_place" />
+      <property class="Action0">
+        <property name="Class" value="PlaceAsBlock" />
+        <property name="Blockname" value="portalBlock_cylinder" />
+      </property>
+    </item>
+
+    <item name="portalBlock_wingsItem">
+      <property name="Meshfile" value="#@modfolder:Resources/gupPortKeyCard.unity3d?guppyPortKeyCard.prefab" />
+      <property name="DropMeshfile" value="#@modfolder:Resources/gupPortKeyCard.unity3d?guppyPortKeyCard.prefab" />
+      <property name="Material" value="Mmetal" />
+      <property name="CustomIcon" value="guppyFuturePortal5" />
+      <property name="CustomIconTint" value="ffffffff" />
+      <property name="HoldType" value="47" />
+      <property name="Group" value="Building" />
+      <property name="Stacknumber" value="10" />
+      <property name="EconomicValue" value="800" />
+      <property name="EconomicBundleSize" value="1" />
+      <property name="SoundPlace" value="forgedmetal_place" />
+      <property class="Action0">
+        <property name="Class" value="PlaceAsBlock" />
+        <property name="Blockname" value="portalBlock_wings" />
+      </property>
+    </item>
+
+    <item name="portalBlock_archItem">
+      <property name="Meshfile" value="#@modfolder:Resources/gupPortKeyCard.unity3d?guppyPortKeyCard.prefab" />
+      <property name="DropMeshfile" value="#@modfolder:Resources/gupPortKeyCard.unity3d?guppyPortKeyCard.prefab" />
+      <property name="Material" value="Mmetal" />
+      <property name="CustomIcon" value="guppyFuturePortal6" />
+      <property name="CustomIconTint" value="ffffffff" />
+      <property name="HoldType" value="47" />
+      <property name="Group" value="Building" />
+      <property name="Stacknumber" value="10" />
+      <property name="EconomicValue" value="800" />
+      <property name="EconomicBundleSize" value="1" />
+      <property name="SoundPlace" value="forgedmetal_place" />
+      <property class="Action0">
+        <property name="Class" value="PlaceAsBlock" />
+        <property name="Blockname" value="portalBlock_arch" />
+      </property>
+    </item>
+
   </append>
 </configs>

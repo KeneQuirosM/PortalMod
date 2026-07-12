@@ -52,6 +52,15 @@ namespace PortalMod
         private readonly Dictionary<Vector3i, string> _biomes =
             new Dictionary<Vector3i, string>();
 
+        // Estilo de portal (Feature "Opcion A: 6 items separados", ver
+        // PortalBiomes.cs) detectado a partir del bloque INACTIVO ya
+        // colocado en el momento de registrar. Igual que el bioma, se
+        // resuelve una sola vez (el estilo de una posicion no cambia — el
+        // jugador elige el estilo al craftear el item, no despues) y se
+        // persiste a disco.
+        private readonly Dictionary<Vector3i, string> _styles =
+            new Dictionary<Vector3i, string>();
+
         // steamId -> timestamp (Time.time) en el que termina el cooldown de 5s.
         private readonly Dictionary<string, float> _cooldowns = new Dictionary<string, float>();
 
@@ -141,6 +150,29 @@ namespace PortalMod
             return _biomes.TryGetValue(pos, out var biome) ? biome : null;
         }
 
+        /// <summary>
+        /// Resuelve el estilo (Feature "Opcion A: 6 items separados") leyendo
+        /// el bloque INACTIVO ya colocado en una posicion (el jugador elige
+        /// el estilo al craftear/colocar el item — ver items.xml/blocks.xml
+        /// — asi que en el momento de RegisterPortal el bloque en el mundo
+        /// SIEMPRE es la variante inactiva de ese estilo, nunca una activa
+        /// todavia). Mismo patron que ResolveBiomeName: depende del chunk
+        /// estar cargado, seguro aqui porque el jugador esta fisicamente
+        /// parado en esa posicion al registrar.
+        /// </summary>
+        private static string ResolveStyleName(Vector3i pos)
+        {
+            var world = GameManager.Instance != null ? GameManager.Instance.World : null;
+            var block = world?.GetBlock(pos).Block;
+            return block != null ? PortalBiomes.GetStyleFromInactiveBlockName(block.GetBlockName()) : null;
+        }
+
+        /// <summary>Estilo guardado para un portal ya registrado, o null si no se pudo resolver (usa PortalBiomes.DefaultStyle — el estilo "legacy" original).</summary>
+        public string GetStyle(Vector3i pos)
+        {
+            return _styles.TryGetValue(pos, out var style) ? style : null;
+        }
+
         public void Init()
         {
             API.Log("PortalManager inicializado (persistencia en memoria + disco).");
@@ -190,6 +222,12 @@ namespace PortalMod
             {
                 _biomes[pos] = ResolveBiomeName(pos);
                 API.Log($"[PortalMod] Bioma detectado para portal en {pos}: {_biomes[pos] ?? "(desconocido, usa variante default)"}");
+            }
+
+            if (!_styles.ContainsKey(pos))
+            {
+                _styles[pos] = ResolveStyleName(pos);
+                API.Log($"[PortalMod] Estilo detectado para portal en {pos}: {_styles[pos] ?? "(desconocido, usa estilo default/legacy)"}");
             }
 
             _dirty = true;
@@ -257,6 +295,7 @@ namespace PortalMod
 
             _positionLookup.Remove(pos);
             _biomes.Remove(pos);
+            _styles.Remove(pos);
             _dirty = true;
 
             API.Log($"Portal eliminado: steamId={portalRef.SteamId} tag='{portalRef.Tag}' pos={pos}");
@@ -453,11 +492,13 @@ namespace PortalMod
         /// <summary>
         /// Guarda el estado actual de portales en disco usando un formato de
         /// texto plano simple y legible (sin dependencias externas de JSON):
-        ///   steamId\ttag\tx,y,z,bioma\tx,y,z,bioma...
-        /// El campo "bioma" (Feature "color y modelo por bioma") se agrego
-        /// despues del formato original de 3 componentes por posicion;
-        /// Load() sigue aceptando lineas viejas sin bioma (lo resuelve de
-        /// nuevo la primera vez que confirma el bloque en el mundo real).
+        ///   steamId\ttag\tx,y,z,bioma,estilo\tx,y,z,bioma,estilo...
+        /// Los campos "bioma" y "estilo" (Features "color y modelo por
+        /// bioma" y "Opcion A: 6 items separados") se agregaron despues del
+        /// formato original de 3 componentes por posicion; Load() sigue
+        /// aceptando lineas viejas de 3 o 4 componentes (resuelve lo que
+        /// falte de nuevo la primera vez que confirma el bloque en el mundo
+        /// real).
         /// </summary>
         public void Save()
         {
@@ -477,7 +518,8 @@ namespace PortalMod
                         foreach (var pos in tagEntry.Value)
                         {
                             var biome = GetBiome(pos) ?? string.Empty;
-                            sb.Append('\t').Append(pos.x).Append(',').Append(pos.y).Append(',').Append(pos.z).Append(',').Append(biome);
+                            var style = GetStyle(pos) ?? string.Empty;
+                            sb.Append('\t').Append(pos.x).Append(',').Append(pos.y).Append(',').Append(pos.z).Append(',').Append(biome).Append(',').Append(style);
                         }
                         sb.Append('\n');
                     }
@@ -511,6 +553,7 @@ namespace PortalMod
                 _portals.Clear();
                 _positionLookup.Clear();
                 _biomes.Clear();
+                _styles.Clear();
 
                 var discardedCount = 0;
 
@@ -535,10 +578,12 @@ namespace PortalMod
                     for (var i = 2; i < parts.Length; i++)
                     {
                         var coords = parts[i].Split(',');
-                        // 3 componentes = formato viejo (sin bioma, de antes de
-                        // la Feature "color y modelo por bioma); 4 = formato
-                        // actual (x,y,z,bioma). Se aceptan ambos.
-                        if (coords.Length != 3 && coords.Length != 4)
+                        // 3 componentes = formato viejo (sin bioma ni estilo,
+                        // de antes de esas Features); 4 = con bioma pero sin
+                        // estilo (de antes de "Opcion A: 6 items separados");
+                        // 5 = formato actual (x,y,z,bioma,estilo). Se aceptan
+                        // los tres.
+                        if (coords.Length != 3 && coords.Length != 4 && coords.Length != 5)
                         {
                             continue;
                         }
@@ -548,7 +593,8 @@ namespace PortalMod
                             int.Parse(coords[1], CultureInfo.InvariantCulture),
                             int.Parse(coords[2], CultureInfo.InvariantCulture));
 
-                        var savedBiome = coords.Length == 4 && coords[3].Length > 0 ? coords[3] : null;
+                        var savedBiome = coords.Length >= 4 && coords[3].Length > 0 ? coords[3] : null;
+                        var savedStyle = coords.Length == 5 && coords[4].Length > 0 ? coords[4] : null;
 
                         // FIX real (portales apareciendo en posiciones random al
                         // cargar, incluso flotando en el aire): antes de
@@ -577,17 +623,34 @@ namespace PortalMod
                             continue;
                         }
 
-                        // Formato viejo sin bioma guardado: si ya se confirmo
-                        // que el bloque existe (chunk cargado), aprovechar y
-                        // resolverlo ahora — Save() lo persistira en formato
-                        // nuevo la proxima vez que haya cambios.
-                        if (savedBiome == null && check == PortalBlockCheck.Present)
+                        // Formato viejo sin bioma/estilo guardado: si ya se
+                        // confirmo que el bloque existe (chunk cargado),
+                        // aprovechar y resolverlos ahora — Save() los
+                        // persistira en formato nuevo la proxima vez que haya
+                        // cambios. NOTA sobre estilo: ResolveStyleName solo
+                        // reconoce el bloque INACTIVO de cada estilo; si el
+                        // portal ya esta vinculado (bloque activo puesto),
+                        // no podra determinarse aqui y cae al estilo default
+                        // ("legacy") — correcto de todas formas para
+                        // cualquier portal creado antes de esta Feature, ya
+                        // que "legacy" era el unico estilo que existia.
+                        if (check == PortalBlockCheck.Present)
                         {
-                            savedBiome = ResolveBiomeName(pos);
-                            _dirty = true;
+                            if (savedBiome == null)
+                            {
+                                savedBiome = ResolveBiomeName(pos);
+                                _dirty = true;
+                            }
+
+                            if (savedStyle == null)
+                            {
+                                savedStyle = ResolveStyleName(pos);
+                                _dirty = true;
+                            }
                         }
 
                         _biomes[pos] = savedBiome;
+                        _styles[pos] = savedStyle;
                         positions.Add(pos);
                         _positionLookup[pos] = new PortalRef(steamId, tag);
                     }

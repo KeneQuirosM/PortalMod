@@ -25,6 +25,10 @@ está pendiente de verificación real**.
 
 ## 3. Pruebas de crafteo
 
+**Nota**: esta sección cubre el item original `portalBlockItem` ("legacy").
+Para los 6 items de estilo nuevos (`portalBlock_platformItem`, etc.) ver
+sección 9.3.
+
 - [ ] `portalBlockItem` aparece en el workbench.
 - [ ] La receta muestra los ingredientes correctos: 1500× resourceScrapIron,
       450× resourceForgedIron, 125× resourceElectricParts, 20×
@@ -198,18 +202,17 @@ de diagnóstico para encontrar la causa REAL de "se ve apagado":
 
 ## 9.2 Pruebas de color/modelo por bioma (Feature "color y modelo por bioma")
 
-**Modelo unificado**: todas las variantes vinculadas (default + 5 biomas)
-usan el mismo modelo `gupFuturePortal5.unity3d?guppyFuturePortal5.prefab`
-("con alas") — solo cambia `TintColor`. El estado inactivo (sin par o sin
-energía) sigue usando `gupFuturePortal1` con su tinte gris-azulado neutro.
+El color (`TintColor`) sobre el modelo de CUALQUIER estilo (ver sección 9.3)
+cambia según el bioma donde se vinculó el par:
 
 - [ ] Colocar y vincular un par de portales en cada bioma listado muestra el
-      modelo `gupFuturePortal5` con el color correspondiente en cuanto el
-      par queda **vinculado** (ya NO depende de tener energía — ver sección
-      6.1) — revisar el log en `RegisterPortal`: `[PortalMod] Bioma
-      detectado para portal en X,Y,Z: <nombre>`, y en `PortalVisualFX`:
-      `[PortalMod] RefreshBlockState pos=... linked=True` seguido de
-      `[PortalMod] SetBlockState pos=... bloqueActual=... bloqueObjetivo=...`.
+      color correspondiente sobre el modelo del estilo craftado, en cuanto
+      el par queda **vinculado** (ya NO depende de tener energía — ver
+      sección 6.1) — revisar el log en `RegisterPortal`: `[PortalMod]
+      Bioma detectado para portal en X,Y,Z: <nombre>`, y en
+      `PortalVisualFX`: `[PortalMod] RefreshBlockState pos=... linked=True
+      style=...` seguido de `[PortalMod] SetBlockState pos=...
+      bloqueActual=... bloqueObjetivo=...`.
       - nieve (`snow`): azul frío — `TintColor="3380FF"`.
       - yermo (`wasteland`): amarillo/dorado — `TintColor="FFCC1A"`.
       - bosque quemado (`burnt_forest`): naranja — `TintColor="FF6600"`.
@@ -218,18 +221,48 @@ energía) sigue usando `gupFuturePortal1` con su tinte gris-azulado neutro.
       - default/sin mapeo (`underwater`, cualquier otro): morado —
         `TintColor="8033FF"`.
 - [ ] El bioma detectado persiste correctamente al recargar el mundo (mismo
-      modelo/color después de un reinicio, sin necesidad de re-vincular).
-- [ ] **Pendiente de confirmar en el juego real** (ver TODO en
-      `blocks.xml`): el nombre de prefab dentro de `gupFuturePortal5.unity3d`
-      — se asumió el mismo patrón que `gupFuturePortal1/4/6.unity3d`
-      (`guppyFuturePortalN.prefab`), sin confirmar contra el XML original
-      del mod de assets. Como TODAS las variantes vinculadas comparten este
-      modelo, si el nombre está mal NINGÚN portal vinculado se vería
-      correctamente (revisar el log de advertencia `SetBlockState: no se
-      encontro el bloque` si esto pasa — aunque ese warning es sobre el
-      NOMBRE DE BLOQUE de blocks.xml, no sobre el prefab en sí; si el bloque
-      se encuentra pero el modelo 3D no carga, el warning no aparecería y
-      habría que revisar el log de carga de assets del juego).
+      color después de un reinicio, sin necesidad de re-vincular).
+
+## 9.3 Pruebas de estilos de portal (Feature "Opcion A: 6 items separados")
+
+- [ ] Los 6 items nuevos (`portalBlock_platformItem`, `portalBlock_gridItem`,
+      `portalBlock_clawsItem`, `portalBlock_cylinderItem`,
+      `portalBlock_wingsItem`, `portalBlock_archItem`) aparecen en el menu de
+      crafteo de la mesa de trabajo, cada uno con su propio icono
+      (`guppyFuturePortal1` a `6` respectivamente) y nombre localizado
+      ("Platform Portal"/"Portal Plataforma", etc.).
+- [ ] El item original `Teleport Portal` (`portalBlockItem`) SIGUE
+      disponible sin cambios (estilo "legacy").
+- [ ] Colocar cada estilo muestra su modelo 3D correspondiente en estado
+      inactivo — revisar el log en `RegisterPortal`: `[PortalMod] Estilo
+      detectado para portal en X,Y,Z: <platform/grid/claws/cylinder/wings/
+      arch>` (o `(desconocido, usa estilo default/legacy)` para el
+      `portalBlockItem` original — esperado, no es un bug).
+- [ ] Vincular un par usando el MISMO estilo en ambos portales funciona
+      igual que antes (tag compartido, teletransporte bidireccional).
+- [ ] Vincular un par usando estilos DISTINTOS en cada portal (ej. un
+      `platform` y un `wings` con el mismo tag) tambien debe funcionar — el
+      estilo es puramente visual, cada portal conserva el modelo de SU
+      PROPIO estilo aunque esten vinculados entre si.
+- [ ] Destruir un portal de estilo `grid` (por ejemplo) dropea un item
+      `portalBlock_gridItem` (su propio estilo), no el `portalBlockItem`
+      genérico — revisar el `<drop event="Destroy">` de cada bloque en
+      `blocks.xml` si esto falla.
+- [ ] El estilo persiste correctamente al recargar el mundo (mismo modelo
+      después de un reinicio, sin necesidad de re-vincular).
+- [ ] Cada estilo acepta cableado eléctrico igual que el original (hereda
+      `Class="Powered"`/`RequiredPower` de `portalBlock` vía `Extends` — ver
+      sección 6.1).
+- [ ] **Pendiente de confirmar en el juego real**: los nombres de prefab
+      dentro de `gupFuturePortal2/3/4/5.unity3d` (estilos grid/claws/
+      cylinder/wings) — se asumió el mismo patrón que
+      `gupFuturePortal1/6.unity3d` (`guppyFuturePortalN.prefab`), sin
+      confirmar contra el XML original del mod de assets para los 4
+      restantes. Si un modelo no carga, revisar el log de advertencia
+      `SetBlockState: no se encontro el bloque` (bloque no encontrado en
+      blocks.xml) vs. el log de carga de assets del juego (bloque
+      encontrado pero el modelo 3D del prefab no carga — dos causas
+      distintas, ver nota en sección 9.2 anterior sobre cómo diferenciarlas).
 
 ## 10. Pruebas de TODOs pendientes
 

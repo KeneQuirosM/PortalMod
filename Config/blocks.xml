@@ -367,5 +367,240 @@
       <property name="Light" value="1.0" />
     </block>
 
+    <!-- ================= ESTILOS DE PORTAL (Opcion A: 6 items separados) =================
+        Feature: 6 items craftables independientes, cada uno coloca un
+        ESTILO de portal distinto (modelo 3D distinto), manteniendo el
+        sistema de color-por-bioma existente (ver PORTAL_BLOCK_BIOMES mas
+        arriba) sobre cada estilo. "portalBlock"/"portalBlockActive*" de
+        arriba se conservan SIN CAMBIOS (no se eliminan ni se renombran) —
+        funcionan como un septimo estilo implicito ("legacy"), para no
+        romper mundos/partidas ya guardadas que tengan ese bloque colocado.
+
+        Cada estilo agrega 7 bloques: 1 inactivo (Extends="portalBlock",
+        solo cambia Model/CustomIcon/el item que dropea al destruirse — TODO
+        lo demas, incluido Class="Powered", RequiredPower, MaxDamage,
+        Material, MultiBlockDim, etc., se hereda de portalBlock sin
+        redeclarar) + 1 activo "default" (Extends del inactivo del mismo
+        estilo, mismo Light/TintColor morado que portalBlockActive) + 5
+        activos de bioma (Extends del activo "default" del mismo estilo,
+        solo TintColor distinto — mismos valores hex ya usados arriba). NO
+        se agregan variantes "PulseHigh" (el pulso de luz esta descontinuado
+        desde el commit que agrego cableado electrico real — ver FIX real en
+        PortalVisualFX.cs).
+
+        Mapeo estilo -> modelo (pedido explicito, mismos bundles ya
+        confirmados/usados en Resources/):
+          platform  -> gupFuturePortal1.unity3d?guppyFuturePortal1.prefab
+          grid      -> gupFuturePortal2.unity3d?guppyFuturePortal2.prefab
+          claws     -> gupFuturePortal3.unity3d?guppyFuturePortal3.prefab
+          cylinder  -> gupFuturePortal4.unity3d?guppyFuturePortal4.prefab
+          wings     -> gupFuturePortal5.unity3d?guppyFuturePortal5.prefab
+          arch      -> gupFuturePortal6.unity3d?guppyFuturePortal6.prefab
+
+        El item que dropea cada variante al destruirse (<drop event="Destroy">)
+        apunta al item de SU PROPIO estilo (ver items.xml — nombres con sufijo
+        "Item" para evitar colision de nombre con el bloque, ver FIX real ahi),
+        no al generico "portalBlockItem", para que romper un portal "grid"
+        devuelva un item "grid", no uno "platform".
+    -->
+
+    <block name="portalBlock_platform">
+      <property name="Extends" value="portalBlock" />
+      <!-- Mismo modelo que portalBlock (gupFuturePortal1) — se redeclara CustomIcon nomas para que el creativo/inventario del bloque muestre el icono correcto. -->
+      <property name="CustomIcon" value="guppyFuturePortal1" />
+      <drop event="Destroy" name="portalBlock_platformItem" count="1" prob="1" />
+    </block>
+    <block name="portalBlock_platform_active">
+      <property name="Extends" value="portalBlock_platform" />
+      <property name="DescriptionKey" value="portalBlockActiveDesc" />
+      <property name="Light" value="0.8" />
+      <property name="TintColor" value="8033FF" />
+    </block>
+    <block name="portalBlock_platform_active_snow">
+      <property name="Extends" value="portalBlock_platform_active" />
+      <property name="TintColor" value="3380FF" />
+    </block>
+    <block name="portalBlock_platform_active_wasteland">
+      <property name="Extends" value="portalBlock_platform_active" />
+      <property name="TintColor" value="FFCC1A" />
+    </block>
+    <block name="portalBlock_platform_active_burntForest">
+      <property name="Extends" value="portalBlock_platform_active" />
+      <property name="TintColor" value="FF6600" />
+    </block>
+    <block name="portalBlock_platform_active_pineForest">
+      <property name="Extends" value="portalBlock_platform_active" />
+      <property name="TintColor" value="33FF33" />
+    </block>
+    <block name="portalBlock_platform_active_desert">
+      <property name="Extends" value="portalBlock_platform_active" />
+      <property name="TintColor" value="FF991A" />
+    </block>
+
+    <block name="portalBlock_grid">
+      <property name="Extends" value="portalBlock" />
+      <property name="Model" value="#@modfolder:Resources/gupFuturePortal2.unity3d?guppyFuturePortal2.prefab" />
+      <property name="CustomIcon" value="guppyFuturePortal2" />
+      <drop event="Destroy" name="portalBlock_gridItem" count="1" prob="1" />
+    </block>
+    <block name="portalBlock_grid_active">
+      <property name="Extends" value="portalBlock_grid" />
+      <property name="DescriptionKey" value="portalBlockActiveDesc" />
+      <property name="Light" value="0.8" />
+      <property name="TintColor" value="8033FF" />
+    </block>
+    <block name="portalBlock_grid_active_snow">
+      <property name="Extends" value="portalBlock_grid_active" />
+      <property name="TintColor" value="3380FF" />
+    </block>
+    <block name="portalBlock_grid_active_wasteland">
+      <property name="Extends" value="portalBlock_grid_active" />
+      <property name="TintColor" value="FFCC1A" />
+    </block>
+    <block name="portalBlock_grid_active_burntForest">
+      <property name="Extends" value="portalBlock_grid_active" />
+      <property name="TintColor" value="FF6600" />
+    </block>
+    <block name="portalBlock_grid_active_pineForest">
+      <property name="Extends" value="portalBlock_grid_active" />
+      <property name="TintColor" value="33FF33" />
+    </block>
+    <block name="portalBlock_grid_active_desert">
+      <property name="Extends" value="portalBlock_grid_active" />
+      <property name="TintColor" value="FF991A" />
+    </block>
+
+    <block name="portalBlock_claws">
+      <property name="Extends" value="portalBlock" />
+      <property name="Model" value="#@modfolder:Resources/gupFuturePortal3.unity3d?guppyFuturePortal3.prefab" />
+      <property name="CustomIcon" value="guppyFuturePortal3" />
+      <drop event="Destroy" name="portalBlock_clawsItem" count="1" prob="1" />
+    </block>
+    <block name="portalBlock_claws_active">
+      <property name="Extends" value="portalBlock_claws" />
+      <property name="DescriptionKey" value="portalBlockActiveDesc" />
+      <property name="Light" value="0.8" />
+      <property name="TintColor" value="8033FF" />
+    </block>
+    <block name="portalBlock_claws_active_snow">
+      <property name="Extends" value="portalBlock_claws_active" />
+      <property name="TintColor" value="3380FF" />
+    </block>
+    <block name="portalBlock_claws_active_wasteland">
+      <property name="Extends" value="portalBlock_claws_active" />
+      <property name="TintColor" value="FFCC1A" />
+    </block>
+    <block name="portalBlock_claws_active_burntForest">
+      <property name="Extends" value="portalBlock_claws_active" />
+      <property name="TintColor" value="FF6600" />
+    </block>
+    <block name="portalBlock_claws_active_pineForest">
+      <property name="Extends" value="portalBlock_claws_active" />
+      <property name="TintColor" value="33FF33" />
+    </block>
+    <block name="portalBlock_claws_active_desert">
+      <property name="Extends" value="portalBlock_claws_active" />
+      <property name="TintColor" value="FF991A" />
+    </block>
+
+    <block name="portalBlock_cylinder">
+      <property name="Extends" value="portalBlock" />
+      <property name="Model" value="#@modfolder:Resources/gupFuturePortal4.unity3d?guppyFuturePortal4.prefab" />
+      <property name="CustomIcon" value="guppyFuturePortal4" />
+      <drop event="Destroy" name="portalBlock_cylinderItem" count="1" prob="1" />
+    </block>
+    <block name="portalBlock_cylinder_active">
+      <property name="Extends" value="portalBlock_cylinder" />
+      <property name="DescriptionKey" value="portalBlockActiveDesc" />
+      <property name="Light" value="0.8" />
+      <property name="TintColor" value="8033FF" />
+    </block>
+    <block name="portalBlock_cylinder_active_snow">
+      <property name="Extends" value="portalBlock_cylinder_active" />
+      <property name="TintColor" value="3380FF" />
+    </block>
+    <block name="portalBlock_cylinder_active_wasteland">
+      <property name="Extends" value="portalBlock_cylinder_active" />
+      <property name="TintColor" value="FFCC1A" />
+    </block>
+    <block name="portalBlock_cylinder_active_burntForest">
+      <property name="Extends" value="portalBlock_cylinder_active" />
+      <property name="TintColor" value="FF6600" />
+    </block>
+    <block name="portalBlock_cylinder_active_pineForest">
+      <property name="Extends" value="portalBlock_cylinder_active" />
+      <property name="TintColor" value="33FF33" />
+    </block>
+    <block name="portalBlock_cylinder_active_desert">
+      <property name="Extends" value="portalBlock_cylinder_active" />
+      <property name="TintColor" value="FF991A" />
+    </block>
+
+    <block name="portalBlock_wings">
+      <property name="Extends" value="portalBlock" />
+      <property name="Model" value="#@modfolder:Resources/gupFuturePortal5.unity3d?guppyFuturePortal5.prefab" />
+      <property name="CustomIcon" value="guppyFuturePortal5" />
+      <drop event="Destroy" name="portalBlock_wingsItem" count="1" prob="1" />
+    </block>
+    <block name="portalBlock_wings_active">
+      <property name="Extends" value="portalBlock_wings" />
+      <property name="DescriptionKey" value="portalBlockActiveDesc" />
+      <property name="Light" value="0.8" />
+      <property name="TintColor" value="8033FF" />
+    </block>
+    <block name="portalBlock_wings_active_snow">
+      <property name="Extends" value="portalBlock_wings_active" />
+      <property name="TintColor" value="3380FF" />
+    </block>
+    <block name="portalBlock_wings_active_wasteland">
+      <property name="Extends" value="portalBlock_wings_active" />
+      <property name="TintColor" value="FFCC1A" />
+    </block>
+    <block name="portalBlock_wings_active_burntForest">
+      <property name="Extends" value="portalBlock_wings_active" />
+      <property name="TintColor" value="FF6600" />
+    </block>
+    <block name="portalBlock_wings_active_pineForest">
+      <property name="Extends" value="portalBlock_wings_active" />
+      <property name="TintColor" value="33FF33" />
+    </block>
+    <block name="portalBlock_wings_active_desert">
+      <property name="Extends" value="portalBlock_wings_active" />
+      <property name="TintColor" value="FF991A" />
+    </block>
+
+    <block name="portalBlock_arch">
+      <property name="Extends" value="portalBlock" />
+      <property name="Model" value="#@modfolder:Resources/gupFuturePortal6.unity3d?guppyFuturePortal6.prefab" />
+      <property name="CustomIcon" value="guppyFuturePortal6" />
+      <drop event="Destroy" name="portalBlock_archItem" count="1" prob="1" />
+    </block>
+    <block name="portalBlock_arch_active">
+      <property name="Extends" value="portalBlock_arch" />
+      <property name="DescriptionKey" value="portalBlockActiveDesc" />
+      <property name="Light" value="0.8" />
+      <property name="TintColor" value="8033FF" />
+    </block>
+    <block name="portalBlock_arch_active_snow">
+      <property name="Extends" value="portalBlock_arch_active" />
+      <property name="TintColor" value="3380FF" />
+    </block>
+    <block name="portalBlock_arch_active_wasteland">
+      <property name="Extends" value="portalBlock_arch_active" />
+      <property name="TintColor" value="FFCC1A" />
+    </block>
+    <block name="portalBlock_arch_active_burntForest">
+      <property name="Extends" value="portalBlock_arch_active" />
+      <property name="TintColor" value="FF6600" />
+    </block>
+    <block name="portalBlock_arch_active_pineForest">
+      <property name="Extends" value="portalBlock_arch_active" />
+      <property name="TintColor" value="33FF33" />
+    </block>
+    <block name="portalBlock_arch_active_desert">
+      <property name="Extends" value="portalBlock_arch_active" />
+      <property name="TintColor" value="FF991A" />
+    </block>
+
   </append>
 </configs>

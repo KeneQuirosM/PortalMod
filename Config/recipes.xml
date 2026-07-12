@@ -36,5 +36,54 @@
       <ingredient name="resourceDuctTape" count="20" />
     </recipe>
 
+    <!-- ================= ESTILOS DE PORTAL (Opcion A: 6 items separados) =================
+        Recetas identicas en ingredientes/costo entre si, una por cada item
+        de estilo (ver items.xml). Ingredientes segun lo pedido: 15x
+        resourceScrapIron, 5x resourceForgedIron, 3x resourceElectricParts.
+
+        FIX real: el pedido original nombraba el ingrediente "resourceIron",
+        que no existe en items.xml vanilla (0 coincidencias) — el recurso de
+        chatarra de hierro real, ya usado en la receta original de
+        portalBlockItem arriba y confirmado en items.xml vanilla, es
+        "resourceScrapIron". "resourceForgedIron"/"resourceElectricParts" SI
+        existen tal cual, confirmados igual contra items.xml vanilla.
+    -->
+
+    <recipe name="portalBlock_platformItem" count="1" craft_time="60" craft_area="workbench" tags="workbenchCrafting">
+      <ingredient name="resourceScrapIron" count="15" />
+      <ingredient name="resourceForgedIron" count="5" />
+      <ingredient name="resourceElectricParts" count="3" />
+    </recipe>
+
+    <recipe name="portalBlock_gridItem" count="1" craft_time="60" craft_area="workbench" tags="workbenchCrafting">
+      <ingredient name="resourceScrapIron" count="15" />
+      <ingredient name="resourceForgedIron" count="5" />
+      <ingredient name="resourceElectricParts" count="3" />
+    </recipe>
+
+    <recipe name="portalBlock_clawsItem" count="1" craft_time="60" craft_area="workbench" tags="workbenchCrafting">
+      <ingredient name="resourceScrapIron" count="15" />
+      <ingredient name="resourceForgedIron" count="5" />
+      <ingredient name="resourceElectricParts" count="3" />
+    </recipe>
+
+    <recipe name="portalBlock_cylinderItem" count="1" craft_time="60" craft_area="workbench" tags="workbenchCrafting">
+      <ingredient name="resourceScrapIron" count="15" />
+      <ingredient name="resourceForgedIron" count="5" />
+      <ingredient name="resourceElectricParts" count="3" />
+    </recipe>
+
+    <recipe name="portalBlock_wingsItem" count="1" craft_time="60" craft_area="workbench" tags="workbenchCrafting">
+      <ingredient name="resourceScrapIron" count="15" />
+      <ingredient name="resourceForgedIron" count="5" />
+      <ingredient name="resourceElectricParts" count="3" />
+    </recipe>
+
+    <recipe name="portalBlock_archItem" count="1" craft_time="60" craft_area="workbench" tags="workbenchCrafting">
+      <ingredient name="resourceScrapIron" count="15" />
+      <ingredient name="resourceForgedIron" count="5" />
+      <ingredient name="resourceElectricParts" count="3" />
+    </recipe>
+
   </append>
 </configs>

@@ -73,9 +73,17 @@ cp Harmony/PortalMod.csproj.template Harmony/PortalMod.csproj
 
 ## Cómo usar el mod (in-game)
 
-1. Craftea `Teleport Portal` (`portalBlockItem`) en una **mesa de trabajo**
-   (workbench). Costo: 15× Hierro, 5× Hierro Forjado, 3× Piezas Eléctricas.
-   Tiempo de crafteo: 60 segundos.
+1. Craftea uno de los **6 estilos de portal** en una **mesa de trabajo**
+   (workbench), cada uno con su propio modelo 3D: `Platform Portal`
+   (`portalBlock_platformItem`), `Grid Portal` (`portalBlock_gridItem`),
+   `Claw Portal` (`portalBlock_clawsItem`), `Cylinder Portal`
+   (`portalBlock_cylinderItem`), `Wings Portal` (`portalBlock_wingsItem`) o
+   `Arch Portal` (`portalBlock_archItem`) — o el `Teleport Portal`
+   (`portalBlockItem`) original. Costo de los 6 estilos nuevos: 15×
+   Chatarra de Hierro, 5× Hierro Forjado, 3× Piezas Eléctricas, 60 segundos
+   (el `Teleport Portal` original tiene un costo distinto, mayor). El
+   estilo elegido queda fijo para ese portal — no se puede cambiar después
+   sin romperlo y volver a colocarlo.
 2. Coloca el bloque donde quieras el primer portal. Al colocarlo se abrirá
    automáticamente una ventana pidiendo un **tag** (nombre), por ejemplo
    `"Westland"`. Escríbelo y pulsa **Confirmar**.
@@ -102,9 +110,10 @@ cp Harmony/PortalMod.csproj.template Harmony/PortalMod.csproj
 10. El **color** de un portal vinculado depende del **bioma** donde lo
     colocaste (nieve, yermo/wasteland, bosque quemado, bosque de pinos,
     desierto — cualquier otro bioma usa el color "default"). El modelo 3D
-    ("con alas") es el mismo para todos los biomas; solo cambia el tinte.
-    Se detecta y se aplica una sola vez al vincularse el par y no cambia
-    después (ni siquiera si pierde la energía — ver punto 11).
+    es el del ESTILO que craftaste (punto 1); el bioma solo cambia el
+    tinte de color sobre ese modelo. Se detecta y se aplica una sola vez al
+    vincularse el par y no cambia después (ni siquiera si pierde la
+    energía — ver punto 11).
 11. Un portal vinculado **necesita estar cableado a una fuente de energía
     encendida** (generador, panel solar, banco de baterías) para
     teletransportar — usa la **herramienta de cableado** normal del juego,
@@ -173,9 +182,9 @@ PortalMod/
 ├── ModInfo.xml
 ├── README.md
 ├── Config/
-│   ├── blocks.xml          Bloque unico "portalBlock"
-│   ├── items.xml           Item crafteable "portalBlockItem"
-│   ├── recipes.xml         Receta de workbench
+│   ├── blocks.xml          portalBlock (legacy) + 6 estilos (portalBlock_platform/grid/claws/cylinder/wings/arch)
+│   ├── items.xml           portalBlockItem (legacy) + 6 items de estilo (sufijo "Item")
+│   ├── recipes.xml         Receta de workbench (7: la legacy + 1 por estilo)
 │   ├── buffs.xml           buffPortalTravel
 │   ├── sounds.xml          SoundDataNode "guppyKeyUsed" (sonido de activacion)
 │   ├── Localization.csv    Strings en english / spanish (nombre real esperado por el juego)
@@ -187,30 +196,30 @@ PortalMod/
 │   ├── PortalMod.csproj            Copia local, en .gitignore, NO versionado
 │   └── src/
 │       ├── API.cs              Punto de entrada IModApi
-│       ├── PortalManager.cs    Registro/vinculacion/cooldown/persistencia
+│       ├── PortalManager.cs    Registro/vinculacion/cooldown/persistencia/estilo/bioma
 │       ├── PortalTeleport.cs   Deteccion de colision y teletransporte
 │       ├── PortalBlockPatch.cs Harmony patches (colocar/activar/destruir)
 │       ├── PortalVisualFX.cs   Luz/particulas por estado + rafagas de teletransporte
 │       ├── PortalHoverFX.cs    Tooltip + texto flotante al apuntar a un portal (mira)
-│       ├── PortalBiomes.cs     Mapeo bioma -> variante de bloque (color/modelo por bioma)
+│       ├── PortalBiomes.cs     Mapeo estilo+bioma -> variante de bloque
 │       ├── PortalPower.cs      Lee el TileEntity electrico real del portal (requiere cableado)
 │       ├── LogFilterPatch.cs   Filtra spam inofensivo del log (particulas rotas del modelo 6)
 │       ├── XUiPortalTag.cs     Controller de la ventana de nombre de tag
 │       └── PortalUtils.cs      Helpers compartidos (identidad de jugador, HUD)
 ├── Resources/
-│   ├── gupFuturePortal1.unity3d   Modelo 3D: portalBlock (estado inactivo, unico uso actual)
-│   ├── gupFuturePortal5.unity3d   Modelo 3D: portalBlockActive y TODAS las variantes de bioma ("con alas", ver blocks.xml)
-│   ├── gupFuturePortal2.unity3d   Sin usar como Model (antes variante bioma snow, unificado a gupFuturePortal5)
-│   ├── gupFuturePortal3.unity3d   Sin usar como Model (antes variante bioma wasteland, unificado a gupFuturePortal5)
-│   ├── gupFuturePortal6.unity3d   Sin usar como Model (antes variante default, unificado a gupFuturePortal5)
-│   ├── gupFuturePortal4.unity3d   Efecto de particulas: teletransporte (antes tambien variante burnt_forest, unificado a gupFuturePortal5)
-│   ├── gupPortKeyCard.unity3d     Modelo 3D: portalBlockItem (mesh en mano)
+│   ├── gupFuturePortal1.unity3d   Modelo 3D: estilo "platform" (y portalBlock legacy inactivo)
+│   ├── gupFuturePortal2.unity3d   Modelo 3D: estilo "grid"
+│   ├── gupFuturePortal3.unity3d   Modelo 3D: estilo "claws"
+│   ├── gupFuturePortal4.unity3d   Modelo 3D: estilo "cylinder"; tambien efecto de particulas de teletransporte
+│   ├── gupFuturePortal5.unity3d   Modelo 3D: estilo "wings" ("con alas"; tambien el estilo legacy vinculado)
+│   ├── gupFuturePortal6.unity3d   Modelo 3D: estilo "arch"
+│   ├── gupPortKeyCard.unity3d     Modelo 3D: mesh en mano de todos los items de portal
 │   ├── gupKeyCardSound.unity3d    Sonido: activacion del portal
 │   └── gupTeleportRide.unity3d    Efecto de particulas: viaje (loop del buff)
 └── UIAtlases/
     └── ItemIconAtlas/
-        ├── guppyFuturePortal6.png Icono de inventario: portalBlockItem
-        └── gupPortKeyCard.png     Icono reservado (sin item asociado aun)
+        ├── guppyFuturePortal1-6.png   Iconos de inventario: uno por estilo + legacy
+        └── gupPortKeyCard.png         Icono reservado (sin item asociado aun)
 ```
 
 **Nota sobre `Resources/`**: los bundles `.unity3d` deben subirse
@@ -247,6 +256,33 @@ instancia su GameObject localmente (`Resources.Load`+`Object.Instantiate`,
 sin replicacion de red) y depende de `Camera.main`, por lo que
 `PortalHoverFX` corre unicamente sobre el jugador local de cada cliente
 (`World.GetPrimaryPlayer()`) y nunca en `GameManager.IsDedicatedServer`.
+
+**Nota sobre los 6 estilos de portal ("Opcion A")**: cada estilo
+(`platform`/`grid`/`claws`/`cylinder`/`wings`/`arch`) es una familia
+INDEPENDIENTE de bloques en `blocks.xml` (1 inactivo + 6 activos —
+default + 5 biomas), encadenados con `Extends` desde el bloque `portalBlock`
+original (heredan `Class="Powered"`/`MaxDamage`/`Material`/etc. sin
+redeclarar, solo cambian `Model`/`CustomIcon`). El bloque/item `portalBlock`/
+`portalBlockItem` originales se conservan sin cambios como un septimo
+estilo implicito ("legacy") — no se eliminaron, para no romper mundos ya
+guardados con ese bloque colocado. `PortalManager.cs` detecta el estilo de
+cada portal leyendo el bloque INACTIVO ya colocado en el momento de
+vincularse (igual mecanismo que el bioma) y lo persiste junto a la
+posicion; `PortalBiomes.cs` centraliza el mapeo estilo+bioma -> nombre de
+bloque.
+
+**FIX real (colision de nombre item/bloque)**: el pedido original nombraba
+el item igual que el bloque (ej. `portalBlock_platform` para ambos). En
+V3.0 items y bloques comparten un unico namespace plano de nombres — dos
+entradas con el mismo `name` no pueden coexistir (mismo motivo por el que
+el mod ya distinguia `portalBlockItem` de `portalBlock` desde el principio).
+Se le agrego el sufijo `Item` a cada nombre de item nuevo
+(`portalBlock_platformItem`, etc.), dejando los BLOQUES con el nombre
+exacto pedido.
+
+**FIX real (receta)**: el ingrediente pedido `resourceIron` no existe en
+items.xml vanilla (0 coincidencias) — se uso `resourceScrapIron` (el mismo
+recurso ya usado en la receta de `portalBlockItem`), confirmado real.
 
 ## Limitaciones conocidas / TODOs
 
