@@ -1,6 +1,3 @@
-using System;
-using System.Linq;
-using System.Reflection;
 using UnityEngine;
 
 namespace PortalMod
@@ -19,12 +16,10 @@ namespace PortalMod
     ///    pulso/parpadeo" pedido, sin depender de una propiedad de flicker
     ///    nativa que no se pudo confirmar (ver TODO en blocks.xml).
     ///
-    ///  - Particulas ambientales (idle) y de rafaga de teletransporte: se
-    ///    reutilizan nombres de particulas/sonidos YA EXISTENTES en el juego
-    ///    base. Como no hay forma de listar los nombres reales de particulas
-    ///    sin abrir el editor de Unity o decompilar el AssetBundle del
-    ///    juego, cada nombre usado aqui esta marcado como candidato/placeholder
-    ///    con un TODO explicito indicando como confirmarlo.
+    ///  - Particulas ambientales (idle) y de rafaga de teletransporte:
+    ///    reutilizan nombres de particulas YA EXISTENTES en el juego base
+    ///    ("p_electric_shock", "p_sparks_fuse"), confirmados con grep contra
+    ///    los XML vanilla instalados (usados ahi en atributos particle="...").
     /// </summary>
     internal static class PortalVisualFX
     {
@@ -142,13 +137,17 @@ namespace PortalMod
         {
             var worldPos = new Vector3(blockPos.x + 0.5f, blockPos.y + 1f, blockPos.z + 0.5f);
 
-            // TODO: verificar nombre real de particula vanilla en V3.0. No existe
-            // un "portal"/"teleport" nativo en 7 Days to Die; se reutiliza aqui un
-            // efecto electrico generico como placeholder tematico (chispas de
-            // valla electrica / soldadura). Busca candidatos reales inspeccionando
-            // el juego con un editor de particulas o grepeando referencias
-            // "electric"/"spark"/"zap" en los XML/Prefabs que vengan con el juego.
-            var particleName = intense ? "electricsparks_lightning" : "electricsparks_small";
+            // Nombres de particula CONFIRMADOS como reales (grep contra
+            // Data/Config/*.xml vanilla instalado, usados ahi en atributos
+            // particle="..." de verdad): "p_electric_shock" para el pulso
+            // intenso del par vinculado, "p_sparks_fuse" (mas sutil) para el
+            // estado huerfano/inactivo. Los nombres anteriores
+            // ("electricsparks_lightning"/"electricsparks_small") eran
+            // inventados — 0 coincidencias en todo el juego — y ademas la
+            // construccion del ParticleEffect estaba rota (ver FIX real en
+            // SpawnParticleServer), asi que nunca se habian detectado como
+            // invalidos.
+            var particleName = intense ? "p_electric_shock" : "p_sparks_fuse";
 
             SpawnParticleServer(particleName, worldPos);
         }
@@ -167,28 +166,40 @@ namespace PortalMod
         {
             var worldPos = new Vector3(blockPos.x + 0.5f, blockPos.y + 1f, blockPos.z + 0.5f);
 
-            // TODO: verificar nombre real de particula vanilla en V3.0 para un
-            // destello brillante/explosivo. Placeholder tematico: chispazo grande
-            // de electricidad (mismo razonamiento que en SpawnAmbientParticle).
-            SpawnParticleServer("electricsparks_lightning_big", worldPos);
+            // Mismo nombre confirmado que el pulso intenso (ver SpawnAmbientParticle).
+            SpawnParticleServer("p_electric_shock", worldPos);
         }
 
-        /// <summary>
-        /// El compilador real (Assembly-CSharp.dll V3.0) confirmo que
-        /// ParticleEffect ya no tiene un constructor publico de 2 argumentos
-        /// (string, Vector3), pero no se tuvo acceso al DLL para determinar el
-        /// constructor/factory correcto. En vez de adivinar una segunda firma a
-        /// ciegas (como con "Open" en XUiPortalTag.cs), la construccion del
-        /// ParticleEffect y la llamada a SpawnParticleEffectServer se resuelven
-        /// por reflection: se prueba primero un constructor (string, Vector3);
-        /// si no existe, se prueba un constructor sin argumentos combinado con
-        /// propiedades/campos de nombre y posicion conocidos por convencion
-        /// (Name/ParticleName, Position/position). Si tampoco existe eso, se
-        /// registra un warning y no se dispara el efecto — nunca se lanza una
-        /// excepcion que pueda tumbar el mod por un efecto puramente cosmetico.
-        /// TODO: reemplazar por una llamada directa en cuanto se confirme el
-        /// constructor/metodo real (decompilar ParticleEffect con ILSpy/dnSpy).
-        /// </summary>
+        // FIX real ("Unknown particle effect: 0" repitiendose cada ambient tick,
+        // ~cada 0.6s por portal): decompilando ParticleEffect.GetDynamicTransform
+        // contra el Assembly-CSharp.dll real se confirmo que ese log se dispara
+        // cuando "ParticleId" (un int) no esta en la tabla de particulas
+        // cargadas. El codigo anterior (por reflection) creaba el
+        // ParticleEffect con su constructor SIN ARGUMENTOS y luego intentaba
+        // asignar campos "Name"/"ParticleName" que NO EXISTEN en la clase real
+        // (sus campos reales son: type, attachment, pos, rot, color,
+        // lightValue, ParticleId, soundName, volumeScale,
+        // additionalHitSoundName, opqueTextureId, parentEntityId,
+        // parentTransform, debugName) — ambos TrySetMember fallaban en
+        // silencio, "ParticleId" quedaba en su valor por defecto (0), y por
+        // eso SIEMPRE se logueaba "Unknown particle effect: 0" al llamar
+        // SpawnParticleEffectServer.
+        //
+        // El constructor real que si asigna "ParticleId = ToId(_name)" es:
+        //   ParticleEffect(string _name, Vector3 _pos, float _lightValue,
+        //       Color _color, string _soundName, Transform _parentTransform,
+        //       bool _OLDCreateColliders, float _volumeScale = 1f,
+        //       string _additionalHitSound = "")
+        // confirmado tanto decompilando el propio constructor como viendo
+        // decenas de usos reales identicos en el juego (ej. EntityAlive.
+        // OnEntityDeath, Block.SpawnDestroyParticleEffect). Y
+        // GameManager.SpawnParticleEffectServer(ParticleEffect, int _entityId,
+        // bool _forceCreation, bool _worldSpawn) es la unica sobrecarga real
+        // (sin ambiguedad). Se llama directo, sin reflection: _entityId=-1
+        // (no hay entidad asociada, efecto puramente ambiental/de posicion),
+        // _forceCreation=false y _worldSpawn=true (worldPos ya es una
+        // posicion absoluta de mundo, no relativa a una entidad — mismo
+        // patron que Block.SpawnDestroyParticleEffect).
         private static void SpawnParticleServer(string particleName, Vector3 worldPos)
         {
             if (GameManager.Instance == null)
@@ -196,94 +207,8 @@ namespace PortalMod
                 return;
             }
 
-            var effect = TryCreateParticleEffect(particleName, worldPos);
-            if (effect == null)
-            {
-                API.LogWarning($"No se pudo construir ParticleEffect para '{particleName}' (constructor/propiedades no confirmados en V3.0).");
-                return;
-            }
-
-            InvokeSpawnParticleEffectServer(effect);
-        }
-
-        private static object TryCreateParticleEffect(string particleName, Vector3 worldPos)
-        {
-            var type = typeof(ParticleEffect);
-
-            var twoArgCtor = type.GetConstructor(new[] { typeof(string), typeof(Vector3) });
-            if (twoArgCtor != null)
-            {
-                return twoArgCtor.Invoke(new object[] { particleName, worldPos });
-            }
-
-            var emptyCtor = type.GetConstructor(Type.EmptyTypes);
-            if (emptyCtor == null)
-            {
-                return null;
-            }
-
-            var instance = emptyCtor.Invoke(null);
-            if (!TrySetMember(instance, "Name", particleName))
-            {
-                TrySetMember(instance, "ParticleName", particleName);
-            }
-            if (!TrySetMember(instance, "Position", worldPos))
-            {
-                TrySetMember(instance, "position", worldPos);
-            }
-            return instance;
-        }
-
-        private static bool TrySetMember(object instance, string memberName, object value)
-        {
-            var type = instance.GetType();
-
-            var field = type.GetField(memberName);
-            if (field != null && field.FieldType.IsInstanceOfType(value))
-            {
-                field.SetValue(instance, value);
-                return true;
-            }
-
-            var prop = type.GetProperty(memberName);
-            if (prop != null && prop.CanWrite && prop.PropertyType.IsInstanceOfType(value))
-            {
-                prop.SetValue(instance, value);
-                return true;
-            }
-
-            return false;
-        }
-
-        private static void InvokeSpawnParticleEffectServer(object particleEffect)
-        {
-            var method = typeof(GameManager).GetMethods()
-                .Where(m => m.Name == "SpawnParticleEffectServer")
-                .OrderByDescending(m => m.GetParameters().Length)
-                .FirstOrDefault(m =>
-                {
-                    var ps = m.GetParameters();
-                    return ps.Length > 0 && ps[0].ParameterType.IsInstanceOfType(particleEffect);
-                });
-
-            if (method == null)
-            {
-                API.LogWarning("No se encontro un metodo SpawnParticleEffectServer compatible en GameManager.");
-                return;
-            }
-
-            var parameters = method.GetParameters();
-            var args = new object[parameters.Length];
-            args[0] = particleEffect;
-            for (var i = 1; i < parameters.Length; i++)
-            {
-                var p = parameters[i];
-                args[i] = p.HasDefaultValue ? p.DefaultValue
-                    : p.ParameterType.IsValueType ? Activator.CreateInstance(p.ParameterType)
-                    : null;
-            }
-
-            method.Invoke(GameManager.Instance, args);
+            var effect = new ParticleEffect(particleName, worldPos, 0f, Color.white, null, null, _OLDCreateColliders: false);
+            GameManager.Instance.SpawnParticleEffectServer(effect, -1, _forceCreation: false, _worldSpawn: true);
         }
     }
 }

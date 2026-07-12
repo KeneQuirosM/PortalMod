@@ -155,9 +155,20 @@ namespace PortalMod
 
         private static void ApplyTravelBuff(EntityPlayer player)
         {
-            // TODO: verificar en Assembly-CSharp V3.0 la firma exacta de
-            // Buffs.AddBuff; en builds anteriores acepta el nombre del buff y,
-            // opcionalmente, el entityId de la fuente.
+            // Firma real confirmada por reflection/decompile contra el
+            // Assembly-CSharp.dll instalado: EntityBuffs.AddBuff(string _name,
+            // int _instigatorId = -1, bool _netSync = true, bool
+            // _fromElectrical = false, float _buffDuration = -1f). El default
+            // "_buffDuration = -1f" significa "usar la duracion propia del
+            // buff definida en buffs.xml" — exactamente lo que se quiere aqui,
+            // asi que esta llamada con solo el nombre ya es correcta. No hace
+            // falta (ni existe) un RemoveBuff manual despues del
+            // teletransporte: el buff se quita solo al expirar su duracion.
+            // El bug real de "el jugador queda lento para siempre" era que
+            // buffPortalTravel en buffs.xml nunca tenia una duracion real
+            // configurada (ver FIX real ahi) — con eso corregido, AddBuff
+            // usa los 2s reales del buff y las passive_effect de velocidad se
+            // revierten solas al expirar, sin necesidad de tocar este metodo.
             player.Buffs?.AddBuff("buffPortalTravel");
         }
 

@@ -42,8 +42,22 @@
   <append xpath="/buffs">
 
     <buff name="buffPortalTravel" name_key="buffPortalTravelName" tooltip_key="buffPortalTravelDesc"
-          icon="ui_game_symbol_stun" icon_color="120,200,255" hidden="false"
-          duration="2">
+          icon="ui_game_symbol_stun" icon_color="120,200,255" hidden="false">
+
+      <!--
+          FIX real (el jugador quedaba lento para siempre despues de
+          teletransportar): "duration" NUNCA es un atributo de <buff> en
+          vanilla — confirmado con grep contra el buffs.xml vanilla
+          instalado: 389 usos reales de "<duration value=X/>" como elemento
+          hijo, 0 usos de duration="X" como atributo. El atributo
+          duration="2" que tenia este buff era simplemente ignorado por el
+          juego (sin error, sin efecto), asi que el buff nunca tenia una
+          duracion real configurada — de ahi que el freeze de velocidad
+          nunca expirara solo. Se reemplaza por el elemento hijo real,
+          mismo patron que usan los buffs vanilla de knockdown/stun
+          (ej. buffInjuryKnockdown01: "<duration value="4"/>").
+      -->
+      <duration value="2" />
 
       <!--
           Congela al jugador: velocidad de movimiento a 0 durante toda la
