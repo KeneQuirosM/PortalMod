@@ -11,17 +11,17 @@ namespace PortalMod
     /// nombre de bloque ("portalBlock" / "portalBlockActive") para no afectar
     /// al resto de bloques del juego.
     ///
-    /// TODO GENERAL: Block.OnBlockPlaceBefore y la sobrecarga objetivo de
-    /// Block.OnBlockActivated (EntityPlayerLocal, no EntityAlive) ya se
-    /// confirmaron contra el Assembly-CSharp.dll real de V3.0 (ver comentarios
-    /// en Block_OnBlockPlaceBefore_Patch y Block_OnBlockActivated_Patch, y
+    /// TODO GENERAL: Block.OnBlockPlaceBefore, la sobrecarga objetivo de
+    /// Block.OnBlockActivated (EntityPlayerLocal, no EntityAlive) y el hook de
+    /// destruccion real (Block.OnBlockDestroyedBy, no OnBlockRemoved — ver
+    /// comentario en Block_OnBlockDestroyedBy_Patch) ya se confirmaron contra
+    /// el Assembly-CSharp.dll real de V3.0 (ver comentarios en cada patch, y
     /// API.LogOnBlockActivatedOverloads para el logueo de respaldo via
-    /// reflection). Block.OnBlockRemoved sigue sin confirmar — la firma usada
-    /// ahi es la conocida de builds anteriores (A20-A21/1.0). Cualquier firma
-    /// incorrecta falla ruidosamente al cargar el mod (Harmony PatchAll/aplicacion del patch: "method not
-    /// found", "AmbiguousMatchException", "Cannot get result from void
-    /// method", etc.) — revisar el log del juego si esto vuelve a ocurrir y
-    /// ajustar segun el mensaje exacto.
+    /// reflection). Cualquier firma incorrecta falla ruidosamente al cargar
+    /// el mod (Harmony PatchAll/aplicacion del patch: "method not found",
+    /// "AmbiguousMatchException", "Cannot get result from void method",
+    /// etc.) — revisar el log del juego si esto vuelve a ocurrir y ajustar
+    /// segun el mensaje exacto.
     /// </summary>
     internal static class PortalBlockPatch
     {
@@ -150,24 +150,45 @@ namespace PortalMod
 
     // ============================================================================
     // 3) BLOQUE DESTRUIDO -> desregistrar del PortalManager.
+    //
+    // FIX real (el portal se desregistraba solo, inmediatamente despues de
+    // colocarlo — log real: "Portal registrado" seguido de "Portal eliminado"/
+    // "portalBlock destruido" en el mismo instante, sin que el jugador
+    // destruyera nada): "OnBlockRemoved" NO es un hook de "el jugador destruyo
+    // este bloque" — decompilando Chunk.SetBlock contra el Assembly-CSharp.dll
+    // real se confirmo que dispara OnBlockRemoved para CUALQUIER cambio de
+    // "type" en esa posicion (via SetBlock -> SetBlockRaw + comparacion de
+    // tipo), incluida la propia inicializacion interna de un multiblock
+    // (portalBlock usa MultiBlockDim="1,2,1"): MultiBlockManager.
+    // UpdateTrackedBlockData() se llama dentro del mismo SetBlock que coloca
+    // el bloque, y ese seguimiento interno del multiblock puede volver a
+    // escribir la MISMA posicion, disparando un OnBlockRemoved "fantasma"
+    // sobre el portalBlock recien colocado.
+    //
+    // El hook real de "un jugador destruyo este bloque por daño/mineria" es
+    // Block.OnBlockDestroyedBy(WorldBase, BlockValueRef, BlockValue, int
+    // _entityId, bool _bUseHarvestTool) — confirmado decompilando
+    // Block.OnBlockDamaged, que lo llama SOLO cuando el daño acumulado llega a
+    // MaxDamage, y ANTES de aplicar el SetBlockRPC que reemplaza el bloque por
+    // aire/downgrade. No aparece invocado desde ningun lugar relacionado con
+    // colocacion o seguimiento de multiblocks.
     // ============================================================================
-    [HarmonyPatch(typeof(Block), "OnBlockRemoved")]
-    internal static class Block_OnBlockRemoved_Patch
+    [HarmonyPatch(typeof(Block), "OnBlockDestroyedBy")]
+    internal static class Block_OnBlockDestroyedBy_Patch
     {
-        // TODO: verificar en Assembly-CSharp V3.0. Firma esperada (builds previas):
-        //   public virtual void OnBlockRemoved(WorldBase _world, Chunk _chunk,
-        //       Vector3i _blockPos, BlockValue _blockValue)
-        private static void Postfix(Block __instance, Vector3i _blockPos, BlockValue _blockValue)
+        private static void Postfix(WorldBase _world, BlockValueRef _bvRef, BlockValue _blockValue)
         {
             if (!PortalBlockPatch.IsPortalBlock(_blockValue))
             {
                 return;
             }
 
-            if (PortalManager.Instance.TryGetPortalRef(_blockPos, out var portalRef))
+            var blockPos = _bvRef.ToBlockPos(_world);
+
+            if (PortalManager.Instance.TryGetPortalRef(blockPos, out var portalRef))
             {
-                PortalManager.Instance.UnregisterPortal(portalRef.SteamId, _blockPos);
-                API.Log($"portalBlock destruido en {_blockPos}, desregistrado (tag='{portalRef.Tag}').");
+                PortalManager.Instance.UnregisterPortal(portalRef.SteamId, blockPos);
+                API.Log($"portalBlock destruido en {blockPos}, desregistrado (tag='{portalRef.Tag}').");
             }
         }
     }
