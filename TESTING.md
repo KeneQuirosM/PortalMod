@@ -73,23 +73,43 @@ está pendiente de verificación real**.
 
 ## 6.1 Pruebas de requisito de energía (Feature "requiere electricidad")
 
-- [ ] Un par de portales vinculado, SIN generador/panel solar/batería
-      encendido dentro de 10 bloques del portal de origen, NO teletransporta
-      al entrar — muestra `"Portal sin energía — conecta un generador"`
-      (throttleado a 1 mensaje cada 3s).
-- [ ] Colocar y encender un generador (o banco de baterías con carga, o
-      panel solar de día) dentro de 10 bloques permite el teletransporte de
-      inmediato (sin necesidad de cablear nada al portal — ver nota en
-      `PortalPower.cs` sobre por qué esto es un chequeo de distancia propio,
-      no el sistema de cableado real del juego).
-- [ ] Apagar o alejar el generador corta el teletransporte de nuevo en el
-      siguiente intento (no hace falta recolocar el portal).
+**Historial**: la primera versión de esta Feature usaba un chequeo de
+DISTANCIA propio (cualquier generador encendido a 10 bloques, sin cablear
+nada). Se reemplazó por cableado REAL: `portalBlock` es ahora
+`Class="Powered"` en `blocks.xml` (igual que `electricwirerelay` vanilla),
+lo que le da un TileEntity eléctrico real, conectable con la **herramienta
+de cableado** como cualquier generador/interruptor/trampa del juego.
+`PortalPower.cs` ahora lee `TileEntityPowered.IsPowered` directo del
+TileEntity, no busca nada por radio.
+
+- [ ] Con la herramienta de cableado, se puede tirar un cable desde un
+      generador/banco de baterías/panel solar hasta un `portalBlock`
+      colocado (debe aceptar la conexión igual que un `electricwirerelay` o
+      un foco — si el juego rechaza la conexión, revisar el TODO sobre
+      `Class="Powered"`/`RequiredPower` en `blocks.xml`).
+- [ ] Un portal vinculado, cableado a una fuente APAGADA o sin cablear
+      (aunque haya un generador físicamente cerca sin cable), NO
+      teletransporta al entrar — muestra `"Portal sin energía — conecta un
+      generador"` (throttleado a 1 mensaje cada 3s).
+- [ ] Encender la fuente conectada permite el teletransporte de inmediato en
+      el siguiente intento.
+- [ ] Apagar la fuente, o cortar el cable con la herramienta de cableado,
+      corta el teletransporte de nuevo.
 - [ ] El chequeo de energía es por el portal de ORIGEN (el que el jugador
       está pisando) — el portal de destino no necesita tener energía propia
       para poder LLEGAR a él.
-- [ ] Visualmente, un portal vinculado pero sin energía se ve igual que uno
-      huérfano (modelo `portalBlock`, sin importar el bioma) — no un color/
-      modelo intermedio.
+- [ ] **Orden recomendado al construir un par**: primero colocar y VINCULAR
+      ambos portales (mismo tag), y RECIÉN DESPUÉS cablear la energía. Si se
+      cablea un portal ANTES de que su par quede vinculado, ese cable se
+      pierde en el momento de vincularse — ver FIX real / nota de "orden de
+      cableado" en `PortalVisualFX.cs` y `PortalManager.cs` sobre por qué
+      (el swap de modelo al vincularse recrea el TileEntity eléctrico).
+- [ ] El modelo/color del portal (bioma) ya NO cambia según el estado de
+      energía (ver nota de "orden de cableado" arriba) — se ve igual
+      vinculado-con-energía que vinculado-sin-energía; la única señal de
+      "sin energía" es el mensaje HUD al intentar usarlo. Esto es un cambio
+      respecto a la primera versión de esta Feature (que sí cambiaba el
+      modelo), necesario para que el cableado real pueda mantenerse estable.
 
 ## 7. Pruebas de sala de portales
 
@@ -153,9 +173,11 @@ está pendiente de verificación real**.
 
 - [ ] Colocar y vincular un par de portales en cada bioma listado (nieve,
       yermo/wasteland, bosque quemado, bosque de pinos, desierto) muestra el
-      modelo y color correspondiente cuando el par queda **vinculado Y con
-      energía** (ver sección 6.1) — revisar el log en `RegisterPortal`:
-      `[PortalMod] Bioma detectado para portal en X,Y,Z: <nombre>`.
+      modelo y color correspondiente en cuanto el par queda **vinculado**
+      (ya NO depende de tener energía — ver sección 6.1 sobre por qué el
+      modelo/color se separó del estado de energía) — revisar el log en
+      `RegisterPortal`: `[PortalMod] Bioma detectado para portal en X,Y,Z:
+      <nombre>`.
 - [ ] Un portal colocado en un bioma sin mapeo específico (o donde el bioma
       no se pudo resolver) usa el modelo/color "default" (morado,
       `gupFuturePortal6`) — el mismo que se usaba antes de esta Feature.
@@ -241,6 +263,20 @@ juego real. Anotar el resultado real de cada uno al probar:
 - [ ] Confirmar acceso al `XUiManager` del jugador local y nombres de
       controles del sistema de binding V3.0 (`XUiPortalTag.cs`,
       `windows.xml`).
+- [ ] **Interacción tecla E tras `Class="Powered"`** (`PortalBlockPatch.cs`,
+      `BlockPowered_HasBlockActivationCommands_Patch`/
+      `BlockPowered_OnBlockActivated_Patch`): no se pudo confirmar sin el
+      juego real si `BlockPowered.HasBlockActivationCommands` (que devuelve
+      `true` para cualquier bloque `Class="Powered"`, incluido portalBlock
+      desde la Feature "requiere electricidad") efectivamente le impide al
+      juego llegar a llamar al overload de 4 argumentos de
+      `OnBlockActivated` que abre la ventana de nombrar/renombrar. Se
+      agregaron dos patches de red de seguridad (suprimir el menú de
+      comandos de `BlockPowered` para portalBlock, y redirigir cualquier
+      activación con comando hacia la misma lógica de nombrar/renombrar) —
+      **probar en el juego real** que presionar E sobre un portal (con o
+      sin tag) sigue abriendo la ventana correcta y no un menú de comandos
+      tipo "Take".
 
 ### 10.1 Errores reales corregidos (compilación y carga del mod)
 

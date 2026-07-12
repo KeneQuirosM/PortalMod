@@ -102,11 +102,18 @@ cp Harmony/PortalMod.csproj.template Harmony/PortalMod.csproj
 10. El **color y modelo** de un portal vinculado dependen del **bioma** donde
     lo colocaste (nieve, yermo/wasteland, bosque quemado, bosque de pinos,
     desierto — cualquier otro bioma usa el modelo/color "default"). Se
-    detecta una sola vez al vincularse el par y no cambia después.
-11. Un portal vinculado **solo teletransporta si hay un generador, panel
-    solar o banco de baterías ENCENDIDO dentro de 10 bloques**. Sin energía
-    cercana se ve como un portal inactivo (modelo/color por defecto) y
-    entrar a él muestra **"Portal sin energía — conecta un generador"**.
+    detecta y se aplica una sola vez al vincularse el par y no cambia
+    después (ni siquiera si pierde la energía — ver punto 11).
+11. Un portal vinculado **necesita estar cableado a una fuente de energía
+    encendida** (generador, panel solar, banco de baterías) para
+    teletransportar — usa la **herramienta de cableado** normal del juego,
+    igual que con cualquier interruptor o trampa eléctrica. Sin conexión (o
+    con la fuente apagada), entrar a él muestra **"Portal sin energía —
+    conecta un generador"** y no ocurre el viaje. **Importante**: cablea el
+    portal DESPUÉS de vincular el par (colocar ambos portales con el mismo
+    tag) — cablear antes de vincular pierde el cable, porque vincular
+    cambia el modelo del bloque al color del bioma, lo que reinicia su
+    conexión eléctrica.
 
 ## Multijugador
 
@@ -138,12 +145,24 @@ mismo tag.
   nombre real usado en `Data/Config/biomes.xml` ("snow", "wasteland",
   "burnt_forest", "pine_forest", "desert", "underwater"). No existe un
   bioma "ciudad" — las ciudades son POIs sobre un bioma normal.
-- **Energía real, sin radio**: el sistema de energía de V3.0 es un grafo de
-  cableado (`PowerItem.Parent`/`Children`), no un chequeo por distancia —
-  no existe un "rango de foco" nativo que replicar. El chequeo de 10
-  bloques de `PortalPower.cs` es una regla propia del mod, construida sobre
-  `PowerManager.Instance.PowerSources` (lista real de fuentes de energía)
-  y `PowerSource.IsOn`/`PowerItem.Position` (reales).
+- **Bloque eléctrico real (`Class="Powered"`)**: no existe una property XML
+  tipo "TileEntityClass"/"PowerItemType" para hacer que un bloque acepte
+  cableado (0 coincidencias en `blocks.xml` vanilla) — se activa siendo una
+  instancia de la clase C# `BlockPowered` (o subclase), seleccionada vía
+  `<property name="Class" value="Powered" />` (igual que
+  `electricwirerelay` vanilla). Crea un `TileEntityPoweredBlock` real
+  (`PowerItemType=Consumer` por defecto), conectable con la herramienta de
+  cableado como cualquier bloque eléctrico del juego.
+  `PortalPower.HasNearbyPower` lee `TileEntityPowered.IsPowered` directo de
+  ese TileEntity.
+- **Swap de bloque = cable cortado**: decompilando `Chunk.SetBlock` se
+  confirmó que cualquier cambio de "type" (ID de bloque) en una posición
+  dispara `Block.OnBlockRemoved`, y `BlockPowered.OnBlockRemoved` desconecta
+  explícitamente el `PowerItem`/cable de esa posición. Por eso el color por
+  bioma (que cambia el bloque) solo se aplica UNA VEZ al vincularse el par
+  — nunca en un tick periódico ni según el estado de energía — y por eso
+  cablear un portal ANTES de vincularlo pierde el cable en cuanto se
+  vincula.
 
 ## Estructura del proyecto
 
@@ -173,7 +192,7 @@ PortalMod/
 │       ├── PortalVisualFX.cs   Luz/particulas por estado + rafagas de teletransporte
 │       ├── PortalHoverFX.cs    Tooltip + texto flotante al apuntar a un portal (mira)
 │       ├── PortalBiomes.cs     Mapeo bioma -> variante de bloque (color/modelo por bioma)
-│       ├── PortalPower.cs      Requisito de energia cercana para teletransportar
+│       ├── PortalPower.cs      Lee el TileEntity electrico real del portal (requiere cableado)
 │       ├── LogFilterPatch.cs   Filtra spam inofensivo del log (particulas rotas del modelo 6)
 │       ├── XUiPortalTag.cs     Controller de la ventana de nombre de tag
 │       └── PortalUtils.cs      Helpers compartidos (identidad de jugador, HUD)

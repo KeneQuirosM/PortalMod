@@ -1,69 +1,43 @@
-using UnityEngine;
-
 namespace PortalMod
 {
     /// <summary>
     /// Requisito de energia electrica para que un portal funcione (Feature:
-    /// requiere electricidad). Verifica si hay una fuente de energia activa
-    /// (generador, banco de baterias, panel solar) dentro de un radio de
-    /// bloques alrededor del portal.
+    /// requiere electricidad). Lee el estado REAL del TileEntity electrico
+    /// del portal — ya no un chequeo de distancia propio (ver historial mas
+    /// abajo): portalBlock ahora es Class="Powered" en blocks.xml (ver FIX
+    /// real ahi), lo que le da un TileEntityPoweredBlock real, conectable
+    /// con la herramienta de cableado del juego como cualquier otro
+    /// consumidor de energia (generador -> cable -> portal).
     ///
-    /// ACLARACION IMPORTANTE sobre el pedido original ("mismo rango que
-    /// focos vanilla"): el sistema de energia real de V3.0 (confirmado
-    /// decompilando PowerManager/PowerItem/PowerSource contra el
-    /// Assembly-CSharp.dll real) NO funciona por radio/distancia — es un
-    /// grafo de cableado (PowerItem.Parent/Children, armado con la
-    /// herramienta de cableado), donde un foco (BlockPoweredLight) necesita
-    /// estar conectado por CABLE a una fuente, sin importar la distancia. No
-    /// existe un "rango de focos" real que copiar. Lo que SI se implementa
-    /// aqui, con APIs reales, es un chequeo de distancia propio (no nativo
-    /// del juego): se recorre PowerManager.Instance.PowerSources (lista real
-    /// de todas las fuentes de energia del mundo) y se compara la posicion
-    /// de cada una (PowerItem.Position, real) contra la del portal,
-    /// aceptando cualquier fuente encendida (PowerSource.IsOn, real —
-    /// confirmado por decompilacion que simplemente expone el campo interno
-    /// "isOn": el generador/banco de baterias/panel solar esta activo) sin
-    /// necesidad de cableado.
+    /// API real confirmada por decompilacion:
+    ///   - World.GetTileEntity(Vector3i) devuelve el TileEntity en esa
+    ///     posicion (o null si no hay ninguno).
+    ///   - TileEntityPowered.IsPowered (propiedad publica, bool): en
+    ///     servidor devuelve PowerItem.IsPowered (el resultado real del
+    ///     calculo del grafo de energia — cableado + fuente encendida +
+    ///     potencia suficiente); en cliente devuelve el campo replicado
+    ///     "isPowered". Exactamente el estado que se necesita.
+    ///
+    /// HISTORIAL (version anterior de este archivo, reemplazada en este
+    /// commit): antes de que portalBlock aceptara cableado, este archivo
+    /// hacia un chequeo de DISTANCIA propio (recorrer
+    /// PowerManager.Instance.PowerSources y comparar posiciones a mano)
+    /// porque no habia forma de conectar un cable real al portal. Ya no
+    /// hace falta: con el TileEntity real, el estado de energia es el
+    /// mismo que usaria cualquier otro bloque electrico del juego.
     /// </summary>
     internal static class PortalPower
     {
-        internal const int RangeBlocks = 10;
-        private const int RangeBlocksSquared = RangeBlocks * RangeBlocks;
-
-        /// <summary>True si hay al menos una fuente de energia ENCENDIDA dentro de RangeBlocks bloques de la posicion dada.</summary>
+        /// <summary>True si el TileEntity electrico del portal en esta posicion esta realmente energizado (cableado a una fuente encendida con potencia suficiente).</summary>
         internal static bool HasNearbyPower(Vector3i pos)
         {
-            if (!PowerManager.HasInstance)
+            var world = GameManager.Instance != null ? GameManager.Instance.World : null;
+            if (world == null)
             {
                 return false;
             }
 
-            var sources = PowerManager.Instance.PowerSources;
-            if (sources == null)
-            {
-                return false;
-            }
-
-            foreach (var source in sources)
-            {
-                if (source == null || !source.IsOn)
-                {
-                    continue;
-                }
-
-                var sourcePos = source.Position;
-                var dx = sourcePos.x - pos.x;
-                var dy = sourcePos.y - pos.y;
-                var dz = sourcePos.z - pos.z;
-                var distSq = dx * dx + dy * dy + dz * dz;
-
-                if (distSq <= RangeBlocksSquared)
-                {
-                    return true;
-                }
-            }
-
-            return false;
+            return world.GetTileEntity(pos) is TileEntityPowered tileEntityPowered && tileEntityPowered.IsPowered;
         }
     }
 }

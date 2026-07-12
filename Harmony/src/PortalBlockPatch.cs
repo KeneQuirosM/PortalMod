@@ -54,6 +54,32 @@ namespace PortalMod
 
             return AllPortalBlockNames.Contains(block.GetBlockName());
         }
+
+        /// <summary>
+        /// Logica compartida de "el jugador activo (tecla E) un portal": si
+        /// ya tiene tag, ofrecer renombrarlo; si no, pedir uno nuevo. Extraida
+        /// a un metodo propio para que tanto Block_OnBlockActivated_Patch (el
+        /// overload de 4 argumentos, sin _commandName, que SIEMPRE se uso
+        /// para esto) como los nuevos patches sobre BlockPowered (ver mas
+        /// abajo — necesarios desde que portalBlock es Class="Powered" para
+        /// aceptar cableado, ver blocks.xml) llamen exactamente al mismo
+        /// codigo.
+        /// </summary>
+        internal static void HandlePortalActivation(EntityPlayer player, Vector3i blockPos)
+        {
+            if (PortalManager.Instance.TryGetPortalRef(blockPos, out var portalRef))
+            {
+                // Regla 9: portal ya tiene tag -> ofrecer renombrarlo.
+                XUiPortalTag.OpenForRename(player, blockPos, portalRef.Tag);
+            }
+            else
+            {
+                // El bloque existe en el mundo pero aun no fue registrado
+                // (por ejemplo si el jugador cerro la ventana sin confirmar
+                // al colocarlo): permitir asignarle un tag ahora.
+                XUiPortalTag.OpenForNewPortal(player, blockPos);
+            }
+        }
     }
 
     // ============================================================================
@@ -142,22 +168,77 @@ namespace PortalMod
                 return false;
             }
 
-            if (PortalManager.Instance.TryGetPortalRef(_blockPos, out var portalRef))
-            {
-                // Regla 9: portal ya tiene tag -> ofrecer renombrarlo.
-                XUiPortalTag.OpenForRename(player, _blockPos, portalRef.Tag);
-            }
-            else
-            {
-                // El bloque existe en el mundo pero aun no fue registrado
-                // (por ejemplo si el jugador cerro la ventana sin confirmar
-                // al colocarlo): permitir asignarle un tag ahora.
-                XUiPortalTag.OpenForNewPortal(player, _blockPos);
-            }
+            PortalBlockPatch.HandlePortalActivation(player, _blockPos);
 
             __result = true;
             // Evita que el motor ejecute cualquier logica de activacion por
             // defecto asociada a la clase base Block para este bloque.
+            return false;
+        }
+    }
+
+    // ============================================================================
+    // 2.1) BLOQUE ELECTRICO (BlockPowered) -> preservar la interaccion de
+    // arriba para portalBlock ahora que Class="Powered" (Feature "requiere
+    // electricidad", ver blocks.xml).
+    //
+    // BlockPowered (la clase C# real detras de Class="Powered") NO
+    // sobreescribe el overload de 4 argumentos sin _commandName que parchea
+    // Block_OnBlockActivated_Patch arriba (confirmado decompilando
+    // BlockPowered contra el Assembly-CSharp.dll real: solo declara sus
+    // propios metodos "OnBlockActivated(string, ...)",
+    // "HasBlockActivationCommands" y "GetBlockActivationCommands"), asi que
+    // ese patch deberia seguir funcionando sin cambios. PERO
+    // HasBlockActivationCommands siempre devuelve true para cualquier
+    // BlockPowered, lo que hace que el juego le muestre al jugador un menu
+    // de comandos (por defecto, "Take") en vez de (o antes de) la activacion
+    // simple — no se pudo confirmar sin el juego real si eso impide que el
+    // overload de 4 argumentos llegue a llamarse. Como red de seguridad para
+    // no arriesgar la interaccion de nombrar/renombrar (ya probada en
+    // sesiones anteriores), se agregan los dos patches siguientes,
+    // especificos de portalBlock:
+    //   - Suprimir el menu de comandos ("Take") de BlockPowered para
+    //     portalBlock, para que el juego use la ruta simple de activacion.
+    //   - Redirigir cualquier activacion CON comando que igual le llegue a
+    //     portalBlock hacia la misma logica de nombrar/renombrar.
+    // ============================================================================
+    [HarmonyPatch(typeof(BlockPowered), "HasBlockActivationCommands")]
+    internal static class BlockPowered_HasBlockActivationCommands_Patch
+    {
+        private static bool Prefix(BlockValue _blockValue, ref bool __result)
+        {
+            if (!PortalBlockPatch.IsPortalBlock(_blockValue))
+            {
+                return true;
+            }
+
+            __result = false;
+            return false;
+        }
+    }
+
+    [HarmonyPatch(typeof(BlockPowered), "OnBlockActivated",
+        new Type[] { typeof(string), typeof(WorldBase), typeof(Vector3i), typeof(BlockValue), typeof(EntityPlayerLocal) })]
+    internal static class BlockPowered_OnBlockActivated_Patch
+    {
+        private static bool Prefix(WorldBase _world, Vector3i _blockPos, BlockValue _blockValue,
+            EntityPlayerLocal _player, ref bool __result)
+        {
+            if (!PortalBlockPatch.IsPortalBlock(_blockValue))
+            {
+                return true;
+            }
+
+            var player = _player as EntityPlayer;
+            if (player == null)
+            {
+                __result = false;
+                return false;
+            }
+
+            PortalBlockPatch.HandlePortalActivation(player, _blockPos);
+
+            __result = true;
             return false;
         }
     }

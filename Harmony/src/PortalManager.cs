@@ -198,12 +198,16 @@ namespace PortalMod
 
             if (positions.Count == MaxPortalsPerTag)
             {
-                // Par completo: reevaluar el estado visual (bioma/pulso si
-                // hay energia cerca, o inactivo si no) en AMBOS portales del
-                // par, no solo en el recien colocado.
+                // Par completo: aplicar el modelo/color del bioma en AMBOS
+                // portales del par, no solo en el recien colocado. Este swap
+                // de bloque SOLO ocurre aqui (evento de vinculacion, raro y
+                // deliberado) — nunca en el ambient tick ni segun el estado
+                // de energia, ver FIX real en PortalVisualFX.cs sobre por
+                // que un swap de bloque frecuente rompe la conexion de cable
+                // real (Feature "requiere electricidad").
                 foreach (var p in positions)
                 {
-                    PortalVisualFX.RefreshBlockState(p, PortalVisualFX.IsLinkedAndPowered(p), pulseHighFrame: false);
+                    PortalVisualFX.RefreshBlockState(p, linked: true);
                 }
 
                 return RegisterResult.Success;
@@ -212,7 +216,7 @@ namespace PortalMod
             // Portal huerfano: asegurar que quede en estado visual inactivo
             // (relevante sobre todo al renombrar, donde el bloque pudo venir de
             // un estado activo previo).
-            PortalVisualFX.RefreshBlockState(pos, linkedAndPowered: false, pulseHighFrame: false);
+            PortalVisualFX.RefreshBlockState(pos, linked: false);
             return RegisterResult.SuccessOrphan;
         }
 
@@ -237,7 +241,7 @@ namespace PortalMod
                 {
                     // El par se rompio: el portal restante queda huerfano y
                     // debe volver al estado visual inactivo.
-                    PortalVisualFX.RefreshBlockState(positions[0], linkedAndPowered: false, pulseHighFrame: false);
+                    PortalVisualFX.RefreshBlockState(positions[0], linked: false);
                 }
 
                 if (positions.Count == 0)

@@ -42,18 +42,26 @@ namespace PortalMod
                 { "desert", ("portalBlockActiveDesert", "portalBlockActivePulseHighDesert") },
             };
 
-        /// <summary>Nombre de bloque XML (blocks.xml) para el estado activo (vinculado + con energia) segun bioma.</summary>
-        internal static string GetActiveBlockName(string biome, bool pulseHigh)
+        /// <summary>
+        /// Nombre de bloque XML (blocks.xml) para el estado vinculado, segun
+        /// bioma. Ya NO distingue una fase de "pulso" (ver FIX real en
+        /// PortalVisualFX.cs: alternar block value periodicamente rompia la
+        /// conexion de cable real de la Feature "requiere electricidad") —
+        /// los bloques "PulseHigh" siguen definidos en blocks.xml (por si
+        /// una entrada vieja del mundo los referencia) pero ya no se eligen
+        /// activamente desde aqui.
+        /// </summary>
+        internal static string GetActiveBlockName(string biome)
         {
             if (!string.IsNullOrEmpty(biome) && BiomeBlockNames.TryGetValue(biome, out var names))
             {
-                return pulseHigh ? names.PulseHigh : names.Active;
+                return names.Active;
             }
 
-            return pulseHigh ? DefaultActivePulseHighBlockName : DefaultActiveBlockName;
+            return DefaultActiveBlockName;
         }
 
-        /// <summary>Todos los nombres de bloque validos (base + todas las variantes por bioma), usado por PortalBlockPatch.IsPortalBlock.</summary>
+        /// <summary>Todos los nombres de bloque validos (base + todas las variantes por bioma, incluidas las de pulso ya sin uso activo), usado por PortalBlockPatch.IsPortalBlock.</summary>
         internal static IEnumerable<string> GetAllBlockNames()
         {
             yield return InactiveBlockName;

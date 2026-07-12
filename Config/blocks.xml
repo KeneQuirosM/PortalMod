@@ -40,7 +40,49 @@
       -->
       <property name="Model" value="#@modfolder:Resources/gupFuturePortal1.unity3d?guppyFuturePortal1.prefab" />
 
-      <property name="Class" value="Block" />
+      <!--
+          FIX real (el portal no aceptaba conexion de cable con la
+          herramienta de cableado — Feature "requiere electricidad"): la
+          participacion en la red de energia de V3.0 NO se activa con una
+          property XML declarativa (no existe "TileEntityClass" ni
+          "PowerItemType" como property de bloque — 0 coincidencias contra
+          TODO blocks.xml vanilla instalado); se activa exclusivamente
+          siendo una instancia de la clase C# "BlockPowered" (o una
+          subclase), la UNICA que implementa "CreateTileEntity" para crear
+          un TileEntityPowered real. Confirmado decompilando BlocksFromXml:
+          la property "Class" de blocks.xml selecciona literalmente la
+          subclase de Block por nombre ("Class"="Powered" -> tipo
+          "BlockPowered"), igual que hacen los bloques electricos vanilla
+          reales: "electricwirerelay" (relay generico, sin comportamiento
+          propio mas alla de aceptar cable — el ejemplo mas parecido a lo
+          que necesita este portal) usa exactamente Class="Powered" +
+          RequiredPower="1", ambos confirmados por grep contra blocks.xml
+          vanilla.
+
+          BlockPowered.CreateTileEntity crea un TileEntityPoweredBlock (por
+          defecto PowerItemType=Consumer, confirmado en el constructor real
+          de TileEntityPowered) — el portal se comporta como un simple
+          RECEPTOR de energia (no redistribuye a otros bloques), que es
+          exactamente lo que se necesita: PortalPower.cs ahora lee
+          TileEntityPowered.IsPowered directo del TileEntity real en vez de
+          buscar fuentes de energia por radio (ver FIX real ahi).
+
+          IMPORTANTE (ver tambien PortalBlockPatch.cs): BlockPowered
+          override "HasBlockActivationCommands" (siempre true) y el
+          OnBlockActivated CON _commandName (usado para su comando "take"
+          incorporado) — pero NO override el OnBlockActivated de 4
+          argumentos SIN _commandName (confirmado decompilando ambas
+          clases), que es el que ya parchea
+          Block_OnBlockActivated_Patch para abrir la ventana de
+          nombrar/renombrar tag. Aun asi, para no arriesgar esa interaccion
+          ya probada, se agregaron dos patches adicionales en
+          PortalBlockPatch.cs que suprimen el menu de comandos de
+          BlockPowered ("Take") para portalBlock especificamente y
+          redirigen cualquier intento de activacion con comando a la misma
+          logica de nombrar/renombrar, como red de seguridad.
+      -->
+      <property name="Class" value="Powered" />
+      <property name="RequiredPower" value="1" />
       <property name="Material" value="Mmetal" />
       <property name="EconomicValue" value="0" />
       <property name="Group" value="Building" />

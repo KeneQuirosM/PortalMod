@@ -127,13 +127,14 @@ namespace PortalMod
             }
 
             // Feature "requiere electricidad": el portal de ORIGEN (el que el
-            // jugador esta pisando/activando) necesita una fuente de energia
-            // encendida dentro de PortalPower.RangeBlocks bloques — ver
-            // PortalPower.cs para la aclaracion sobre por que esto es un
-            // chequeo de distancia propio y no el sistema de cableado real
-            // del juego. No se exige energia tambien en el DESTINO: alcanza
-            // con que el portal que el jugador esta usando activamente tenga
-            // energia para iniciar el viaje.
+            // jugador esta pisando/activando) necesita estar realmente
+            // cableado a una fuente de energia encendida — portalBlock es
+            // Class="Powered" en blocks.xml (ver FIX real ahi) y
+            // PortalPower.HasNearbyPower lee el TileEntityPowered.IsPowered
+            // real de esa posicion (ver PortalPower.cs). No se exige energia
+            // tambien en el DESTINO: alcanza con que el portal que el
+            // jugador esta usando activamente tenga energia para iniciar el
+            // viaje.
             if (!PortalPower.HasNearbyPower(originPos))
             {
                 ShowNoPowerMessageThrottled(player, steamId, tag);

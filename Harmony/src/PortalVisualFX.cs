@@ -6,26 +6,62 @@ namespace PortalMod
     /// Efectos visuales del portal usando UNICAMENTE recursos vanilla (sin
     /// AssetBundles externos que no formen ya parte de Resources/):
     ///
-    ///  - Cambio de estado inactivo/activo: se resuelve intercambiando el
-    ///    BlockValue del bloque colocado entre "portalBlock" (huerfano o sin
-    ///    energia) y una variante activa (vinculado Y con energia cercana —
-    ///    ver PortalPower) elegida segun el bioma del portal (ver
-    ///    PortalBiomes) — los nombres de bloque son variantes del mismo
-    ///    bloque base definidas en blocks.xml, cada una con sus propias
-    ///    propiedades Model/Light/TintColor.
+    ///  - Cambio de modelo/color: se resuelve intercambiando el BlockValue
+    ///    del bloque colocado entre "portalBlock" (huerfano) y la variante
+    ///    del bioma correspondiente (vinculado — ver PortalBiomes), los
+    ///    nombres de bloque son variantes del mismo bloque base definidas en
+    ///    blocks.xml, cada una con sus propias propiedades Model/Light/
+    ///    TintColor. Este swap SOLO ocurre al vincularse/desvincularse un
+    ///    par (RegisterPortal/UnregisterPortal en PortalManager.cs), NUNCA
+    ///    en el ambient tick — ver FIX real mas abajo sobre por que.
     ///
     ///  - Particulas ambientales (idle) y de rafaga de teletransporte:
     ///    reutilizan nombres de particulas YA EXISTENTES en el juego base
     ///    ("p_electric_shock", "p_sparks_fuse"), confirmados con grep contra
     ///    los XML vanilla instalados (usados ahi en atributos particle="...").
+    ///
+    /// FIX real (el portal perdia la conexion de cable constantemente,
+    /// Feature "requiere electricidad" — portalBlock ahora es Class="Powered"
+    /// en blocks.xml, ver FIX real ahi): el diseño anterior de este archivo
+    /// alternaba el BlockValue del portal cada ~0.6s entre dos variantes
+    /// "activas" (pulso de luz) Y ademas re-evaluaba/aplicaba el estado
+    /// segun energia en CADA ambient tick. Decompilando Chunk.SetBlock
+    /// contra el Assembly-CSharp.dll real se confirmo que CUALQUIER swap de
+    /// BlockValue con un "type" (ID de bloque) distinto dispara
+    /// Block.OnBlockRemoved en el bloque ANTERIOR
+    /// ("blockValue.type != _blockValue.type" es el gate) — y
+    /// BlockPowered.OnBlockRemoved (heredado por portalBlock) llama
+    /// explicitamente a PowerManager.Instance.RemovePowerNode(...) y
+    /// tileEntityPowered.RemoveWires() en ese momento. Como portalBlock,
+    /// portalBlockActive y cada variante de bioma son bloques con "type"
+    /// (ID) distintos entre si (aunque compartan Class="Powered" via
+    /// Extends), CUALQUIER swap entre ellos desconecta el cable — y como el
+    /// diseño anterior swapeaba cada 0.6s (pulso) y tambien cada vez que
+    /// cambiaba el estado de energia, el portal jamas podia quedarse
+    /// conectado mas de un instante: el propio swap que reflejaba "ahora
+    /// tiene energia" era lo que le quitaba el cable, causando que en el
+    /// siguiente tick volviera a leerse sin energia, undo del swap, y asi en
+    /// loop infinito.
+    ///
+    /// FIX: el BlockValue del portal ahora SOLO cambia al vincularse/
+    /// desvincularse un par (evento raro y deliberado, disparado por el
+    /// jugador colocando el segundo portal o destruyendo uno), nunca por el
+    /// estado de energia ni en un tick periodico. Esto significa que, una
+    /// vez vinculado, el modelo/color del portal refleja el BIOMA de forma
+    /// estable (no cambia si se desconecta el generador), y el requisito de
+    /// energia real (Feature "requiere electricidad") se comunica al
+    /// jugador via el mensaje HUD "Portal sin energia" (ver PortalTeleport.cs)
+    /// en vez de un cambio visual — el swap de bloque y el cableado
+    /// electrico real son mutuamente incompatibles en V3.0 tal como esta
+    /// implementado el sistema de energia (grafo de PowerItem atado al
+    /// TileEntity de una posicion/BlockValue especifica).
     /// </summary>
     internal static class PortalVisualFX
     {
         private enum BlockState
         {
             Inactive,
-            Active,
-            ActivePulseHigh
+            Active
         }
 
         private const float AmbientTickInterval = 0.6f;
@@ -35,43 +71,22 @@ namespace PortalMod
         private const int OrphanParticleTickModulo = 4;
 
         private static float _nextAmbientTick;
-        private static bool _pulseHighFrame;
         private static int _ambientTickCount;
-
-        // ========================================================================
-        // ESTADO COMBINADO: vinculado (PortalManager) + energia (PortalPower)
-        // ========================================================================
-
-        /// <summary>
-        /// True si el portal en esta posicion esta vinculado a su par
-        /// (PortalManager.IsPositionActive) Y tiene una fuente de energia
-        /// activa cerca (PortalPower.HasNearbyPower, Feature "requiere
-        /// electricidad"). Unico punto que combina ambas condiciones para
-        /// decidir si el portal se ve/comporta como "activo" — usado tanto
-        /// para elegir el modelo del bioma (RefreshBlockState) como, en
-        /// PortalTeleport.cs, para permitir o no el teletransporte en si.
-        /// </summary>
-        internal static bool IsLinkedAndPowered(Vector3i pos)
-        {
-            return PortalManager.Instance.IsPositionActive(pos) && PortalPower.HasNearbyPower(pos);
-        }
 
         /// <summary>
         /// Reevalua y aplica el bloque correcto para una posicion de portal:
-        /// variante del bioma (con pulso si corresponde) si esta vinculado Y
-        /// tiene energia, o el bloque base "portalBlock" (inactivo, sin
-        /// importar el bioma — pedido explicito de la Feature de energia) en
-        /// cualquier otro caso. Se recibe "linkedAndPowered" ya calculado (en
-        /// vez de recalcularlo aqui) para que AmbientTick pueda reusarlo
-        /// tambien al decidir que particula disparar, sin consultar
-        /// PortalManager/PowerManager dos veces por portal por tick.
+        /// variante del bioma si esta vinculado, o el bloque base
+        /// "portalBlock" (huerfano) si no. Se llama SOLO al vincularse/
+        /// desvincularse un par (PortalManager.RegisterPortal/
+        /// UnregisterPortal) — nunca desde el ambient tick, ver FIX real de
+        /// la clase.
         /// </summary>
-        internal static void RefreshBlockState(Vector3i pos, bool linkedAndPowered, bool pulseHighFrame)
+        internal static void RefreshBlockState(Vector3i pos, bool linked)
         {
-            if (linkedAndPowered)
+            if (linked)
             {
                 var biome = PortalManager.Instance.GetBiome(pos);
-                SetBlockState(pos, pulseHighFrame ? BlockState.ActivePulseHigh : BlockState.Active, biome);
+                SetBlockState(pos, BlockState.Active, biome);
             }
             else
             {
@@ -82,7 +97,7 @@ namespace PortalMod
         /// <summary>
         /// Intercambia el BlockValue en el mundo por la variante
         /// correspondiente. No hace nada si el bloque ya esta en ese estado
-        /// (evita trafico de red / parpadeo innecesario en cada ambient tick).
+        /// (evita trafico de red / desconexiones de cable innecesarias).
         /// </summary>
         private static void SetBlockState(Vector3i pos, BlockState state, string biome)
         {
@@ -94,7 +109,7 @@ namespace PortalMod
 
             var targetName = state == BlockState.Inactive
                 ? PortalBiomes.InactiveBlockName
-                : PortalBiomes.GetActiveBlockName(biome, pulseHigh: state == BlockState.ActivePulseHigh);
+                : PortalBiomes.GetActiveBlockName(biome);
 
             // TODO: verificar en Assembly-CSharp V3.0 la API real para resolver
             // un Block por nombre y construir su BlockValue. Candidato de builds
@@ -129,7 +144,8 @@ namespace PortalMod
         }
 
         // ========================================================================
-        // TICK AMBIENTAL: pulso de luz en portales activos + particulas idle
+        // TICK AMBIENTAL: solo particulas idle — NUNCA cambia el BlockValue
+        // (ver FIX real de la clase: eso desconectaria el cable).
         // ========================================================================
 
         /// <summary>Se invoca desde PortalTeleport.Tick() en cada tick de juego; se auto-throttlea internamente.</summary>
@@ -141,25 +157,21 @@ namespace PortalMod
             }
 
             _nextAmbientTick = Time.time + AmbientTickInterval;
-            _pulseHighFrame = !_pulseHighFrame;
             _ambientTickCount++;
 
             foreach (var pos in PortalManager.Instance.GetAllPortalPositions())
             {
-                var linkedAndPowered = IsLinkedAndPowered(pos);
-                RefreshBlockState(pos, linkedAndPowered, _pulseHighFrame);
-
-                if (linkedAndPowered)
+                // Leer el estado de energia real (TileEntityPowered.IsPowered,
+                // ver PortalPower.cs) aqui es seguro: solo decide que
+                // particula disparar, nunca toca el BlockValue.
+                if (PortalManager.Instance.IsPositionActive(pos) && PortalPower.HasNearbyPower(pos))
                 {
-                    // Estado ACTIVO (vinculado + con energia): particulas
-                    // densas/rapidas cada tick.
+                    // Vinculado + con energia: particulas densas/rapidas cada tick.
                     SpawnAmbientParticle(pos, intense: true);
                 }
                 else if (_ambientTickCount % OrphanParticleTickModulo == 0)
                 {
-                    // Estado INACTIVO (huerfano O sin energia): luz tenue
-                    // estatica ya definida en blocks.xml (portalBlock), sin
-                    // pulso; particulas escasas.
+                    // Huerfano O sin energia: particulas escasas.
                     SpawnAmbientParticle(pos, intense: false);
                 }
             }
@@ -171,9 +183,9 @@ namespace PortalMod
 
             // Nombres de particula CONFIRMADOS como reales (grep contra
             // Data/Config/*.xml vanilla instalado, usados ahi en atributos
-            // particle="..." de verdad): "p_electric_shock" para el pulso
-            // intenso del par vinculado, "p_sparks_fuse" (mas sutil) para el
-            // estado huerfano/inactivo.
+            // particle="..." de verdad): "p_electric_shock" para el estado
+            // vinculado+con energia, "p_sparks_fuse" (mas sutil) para
+            // huerfano/sin energia.
             var particleName = intense ? "p_electric_shock" : "p_sparks_fuse";
 
             SpawnParticleServer(particleName, worldPos);
@@ -193,7 +205,7 @@ namespace PortalMod
         {
             var worldPos = new Vector3(blockPos.x + 0.5f, blockPos.y + 1f, blockPos.z + 0.5f);
 
-            // Mismo nombre confirmado que el pulso intenso (ver SpawnAmbientParticle).
+            // Mismo nombre confirmado que el estado intenso (ver SpawnAmbientParticle).
             SpawnParticleServer("p_electric_shock", worldPos);
         }
 
