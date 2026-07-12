@@ -71,6 +71,26 @@ está pendiente de verificación real**.
 - [ ] El cooldown de 5s impide teletransportar inmediatamente después de
       un viaje (verificar que no ocurran loops).
 
+## 6.1 Pruebas de requisito de energía (Feature "requiere electricidad")
+
+- [ ] Un par de portales vinculado, SIN generador/panel solar/batería
+      encendido dentro de 10 bloques del portal de origen, NO teletransporta
+      al entrar — muestra `"Portal sin energía — conecta un generador"`
+      (throttleado a 1 mensaje cada 3s).
+- [ ] Colocar y encender un generador (o banco de baterías con carga, o
+      panel solar de día) dentro de 10 bloques permite el teletransporte de
+      inmediato (sin necesidad de cablear nada al portal — ver nota en
+      `PortalPower.cs` sobre por qué esto es un chequeo de distancia propio,
+      no el sistema de cableado real del juego).
+- [ ] Apagar o alejar el generador corta el teletransporte de nuevo en el
+      siguiente intento (no hace falta recolocar el portal).
+- [ ] El chequeo de energía es por el portal de ORIGEN (el que el jugador
+      está pisando) — el portal de destino no necesita tener energía propia
+      para poder LLEGAR a él.
+- [ ] Visualmente, un portal vinculado pero sin energía se ve igual que uno
+      huérfano (modelo `portalBlock`, sin importar el bioma) — no un color/
+      modelo intermedio.
+
 ## 7. Pruebas de sala de portales
 
 - [ ] Múltiples pares con distintos tags conviven sin conflicto.
@@ -128,6 +148,29 @@ está pendiente de verificación real**.
       true/false` por cada posición restaurada desde disco; las que dicen
       `false` se descartan automáticamente (y no deberían volver a
       aparecer en cargas futuras, una vez que el mod vuelva a guardar).
+
+## 9.2 Pruebas de color/modelo por bioma (Feature "color y modelo por bioma")
+
+- [ ] Colocar y vincular un par de portales en cada bioma listado (nieve,
+      yermo/wasteland, bosque quemado, bosque de pinos, desierto) muestra el
+      modelo y color correspondiente cuando el par queda **vinculado Y con
+      energía** (ver sección 6.1) — revisar el log en `RegisterPortal`:
+      `[PortalMod] Bioma detectado para portal en X,Y,Z: <nombre>`.
+- [ ] Un portal colocado en un bioma sin mapeo específico (o donde el bioma
+      no se pudo resolver) usa el modelo/color "default" (morado,
+      `gupFuturePortal6`) — el mismo que se usaba antes de esta Feature.
+- [ ] El bioma detectado persiste correctamente al recargar el mundo (mismo
+      modelo/color después de un reinicio, sin necesidad de re-vincular).
+- [ ] **Pendiente de confirmar en el juego real** (ver TODO en
+      `blocks.xml`): los prefabs dentro de `gupFuturePortal2/3/5.unity3d`
+      (nieve/yermo/desierto) — se asumió el mismo patrón de nombre que
+      `gupFuturePortal1/4/6.unity3d` (`guppyFuturePortalN.prefab`), sin
+      confirmar contra el XML original del mod de assets. Si el modelo no
+      carga, revisar el nombre real del prefab dentro del bundle.
+- [ ] **Pendiente de confirmar**: `gupFuturePortal4.unity3d` (usado también
+      como prefab de partícula en `buffs.xml`) funcionando como `Model` de
+      bloque completo (`Shape="ModelEntity"`) para la variante
+      `burnt_forest` — si no carga, es la variante más probable de fallar.
 
 ## 10. Pruebas de TODOs pendientes
 

@@ -99,6 +99,14 @@ cp Harmony/PortalMod.csproj.template Harmony/PortalMod.csproj
 9. Al salir de un portal se aplica brevemente el buff `buffPortalTravel`
    (2 segundos), que congela el movimiento y dispara un efecto de
    partículas/sonido de llegada.
+10. El **color y modelo** de un portal vinculado dependen del **bioma** donde
+    lo colocaste (nieve, yermo/wasteland, bosque quemado, bosque de pinos,
+    desierto — cualquier otro bioma usa el modelo/color "default"). Se
+    detecta una sola vez al vincularse el par y no cambia después.
+11. Un portal vinculado **solo teletransporta si hay un generador, panel
+    solar o banco de baterías ENCENDIDO dentro de 10 bloques**. Sin energía
+    cercana se ve como un portal inactivo (modelo/color por defecto) y
+    entrar a él muestra **"Portal sin energía — conecta un generador"**.
 
 ## Multijugador
 
@@ -125,6 +133,17 @@ mismo tag.
 - **Configs vía XPath**: todos los archivos en `Config/` usan `<configs>`
   como raíz con comandos `<append xpath="...">` para inyectarse sobre los
   XML base del juego sin reemplazarlos.
+- **Bioma real**: `World.GetBiome(int x, int z)` (instancia, no estático)
+  devuelve un `BiomeDefinition` cuyo campo público `m_sBiomeName` es el
+  nombre real usado en `Data/Config/biomes.xml` ("snow", "wasteland",
+  "burnt_forest", "pine_forest", "desert", "underwater"). No existe un
+  bioma "ciudad" — las ciudades son POIs sobre un bioma normal.
+- **Energía real, sin radio**: el sistema de energía de V3.0 es un grafo de
+  cableado (`PowerItem.Parent`/`Children`), no un chequeo por distancia —
+  no existe un "rango de foco" nativo que replicar. El chequeo de 10
+  bloques de `PortalPower.cs` es una regla propia del mod, construida sobre
+  `PowerManager.Instance.PowerSources` (lista real de fuentes de energía)
+  y `PowerSource.IsOn`/`PowerItem.Position` (reales).
 
 ## Estructura del proyecto
 
@@ -153,12 +172,18 @@ PortalMod/
 │       ├── PortalBlockPatch.cs Harmony patches (colocar/activar/destruir)
 │       ├── PortalVisualFX.cs   Luz/particulas por estado + rafagas de teletransporte
 │       ├── PortalHoverFX.cs    Tooltip + texto flotante al apuntar a un portal (mira)
+│       ├── PortalBiomes.cs     Mapeo bioma -> variante de bloque (color/modelo por bioma)
+│       ├── PortalPower.cs      Requisito de energia cercana para teletransportar
+│       ├── LogFilterPatch.cs   Filtra spam inofensivo del log (particulas rotas del modelo 6)
 │       ├── XUiPortalTag.cs     Controller de la ventana de nombre de tag
 │       └── PortalUtils.cs      Helpers compartidos (identidad de jugador, HUD)
 ├── Resources/
-│   ├── gupFuturePortal1.unity3d   Modelo 3D: portalBlock (estado inactivo)
-│   ├── gupFuturePortal6.unity3d   Modelo 3D: portalBlockActive (estado activo, ver blocks.xml)
-│   ├── gupFuturePortal4.unity3d   Efecto de particulas: teletransporte
+│   ├── gupFuturePortal1.unity3d   Modelo 3D: portalBlock / variante bioma pine_forest
+│   ├── gupFuturePortal2.unity3d   Modelo 3D: variante bioma snow
+│   ├── gupFuturePortal3.unity3d   Modelo 3D: variante bioma wasteland
+│   ├── gupFuturePortal5.unity3d   Modelo 3D: variante bioma desert
+│   ├── gupFuturePortal6.unity3d   Modelo 3D: portalBlockActive (default/ciudad, ver blocks.xml)
+│   ├── gupFuturePortal4.unity3d   Efecto de particulas: teletransporte; tambien variante bioma burnt_forest (uso como Model sin confirmar, ver blocks.xml)
 │   ├── gupPortKeyCard.unity3d     Modelo 3D: portalBlockItem (mesh en mano)
 │   ├── gupKeyCardSound.unity3d    Sonido: activacion del portal
 │   └── gupTeleportRide.unity3d    Efecto de particulas: viaje (loop del buff)

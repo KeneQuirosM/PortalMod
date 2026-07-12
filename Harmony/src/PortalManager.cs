@@ -45,6 +45,13 @@ namespace PortalMod
         private readonly Dictionary<Vector3i, PortalRef> _positionLookup =
             new Dictionary<Vector3i, PortalRef>();
 
+        // Bioma REAL detectado en el momento de registrar cada portal (Feature
+        // "color y modelo por bioma"). Se resuelve una sola vez al registrar
+        // (el bioma de una posicion no cambia en el tiempo en V3.0) y se
+        // persiste a disco junto con la posicion — ver Save()/Load().
+        private readonly Dictionary<Vector3i, string> _biomes =
+            new Dictionary<Vector3i, string>();
+
         // steamId -> timestamp (Time.time) en el que termina el cooldown de 5s.
         private readonly Dictionary<string, float> _cooldowns = new Dictionary<string, float>();
 
@@ -108,6 +115,32 @@ namespace PortalMod
             return PortalBlockPatch.IsPortalBlock(blockValue) ? PortalBlockCheck.Present : PortalBlockCheck.Missing;
         }
 
+        /// <summary>
+        /// Resuelve el nombre de bioma REAL (ver PortalBiomes) en una
+        /// posicion, usado al registrar un portal por primera vez (Feature
+        /// "color y modelo por bioma"). API real confirmada por
+        /// decompilacion: World.GetBiome(int x, int z) devuelve un
+        /// BiomeDefinition cuyo campo publico "m_sBiomeName" (string) es el
+        /// nombre real usado en Data/Config/biomes.xml (ej. "snow",
+        /// "wasteland"). Igual que GetBlock, depende del chunk estar cargado
+        /// (GetBiome internamente usa GetChunkFromWorldPos) — no es un
+        /// problema aqui porque esto solo se llama al registrar un portal
+        /// recien colocado, momento en el que el jugador esta fisicamente
+        /// parado ahi y el chunk esta garantizado cargado.
+        /// </summary>
+        private static string ResolveBiomeName(Vector3i pos)
+        {
+            var world = GameManager.Instance != null ? GameManager.Instance.World : null;
+            var biomeDef = world?.GetBiome(pos.x, pos.z);
+            return biomeDef?.m_sBiomeName;
+        }
+
+        /// <summary>Bioma guardado para un portal ya registrado, o null si no se pudo resolver (usa la variante "default" — ver PortalBiomes).</summary>
+        public string GetBiome(Vector3i pos)
+        {
+            return _biomes.TryGetValue(pos, out var biome) ? biome : null;
+        }
+
         public void Init()
         {
             API.Log("PortalManager inicializado (persistencia en memoria + disco).");
@@ -152,17 +185,25 @@ namespace PortalMod
 
             positions.Add(pos);
             _positionLookup[pos] = new PortalRef(steamId, tag);
+
+            if (!_biomes.ContainsKey(pos))
+            {
+                _biomes[pos] = ResolveBiomeName(pos);
+                API.Log($"[PortalMod] Bioma detectado para portal en {pos}: {_biomes[pos] ?? "(desconocido, usa variante default)"}");
+            }
+
             _dirty = true;
 
             API.Log($"Portal registrado: steamId={steamId} tag='{tag}' pos={pos} (par actual: {positions.Count}/2)");
 
             if (positions.Count == MaxPortalsPerTag)
             {
-                // Par completo: activar el estado visual (luz+particulas
-                // intensas) en AMBOS portales del par, no solo en el recien colocado.
+                // Par completo: reevaluar el estado visual (bioma/pulso si
+                // hay energia cerca, o inactivo si no) en AMBOS portales del
+                // par, no solo en el recien colocado.
                 foreach (var p in positions)
                 {
-                    PortalVisualFX.SetBlockState(p, PortalVisualFX.BlockState.Active);
+                    PortalVisualFX.RefreshBlockState(p, PortalVisualFX.IsLinkedAndPowered(p), pulseHighFrame: false);
                 }
 
                 return RegisterResult.Success;
@@ -171,7 +212,7 @@ namespace PortalMod
             // Portal huerfano: asegurar que quede en estado visual inactivo
             // (relevante sobre todo al renombrar, donde el bloque pudo venir de
             // un estado activo previo).
-            PortalVisualFX.SetBlockState(pos, PortalVisualFX.BlockState.Inactive);
+            PortalVisualFX.RefreshBlockState(pos, linkedAndPowered: false, pulseHighFrame: false);
             return RegisterResult.SuccessOrphan;
         }
 
@@ -196,7 +237,7 @@ namespace PortalMod
                 {
                     // El par se rompio: el portal restante queda huerfano y
                     // debe volver al estado visual inactivo.
-                    PortalVisualFX.SetBlockState(positions[0], PortalVisualFX.BlockState.Inactive);
+                    PortalVisualFX.RefreshBlockState(positions[0], linkedAndPowered: false, pulseHighFrame: false);
                 }
 
                 if (positions.Count == 0)
@@ -211,6 +252,7 @@ namespace PortalMod
             }
 
             _positionLookup.Remove(pos);
+            _biomes.Remove(pos);
             _dirty = true;
 
             API.Log($"Portal eliminado: steamId={portalRef.SteamId} tag='{portalRef.Tag}' pos={pos}");
@@ -407,7 +449,11 @@ namespace PortalMod
         /// <summary>
         /// Guarda el estado actual de portales en disco usando un formato de
         /// texto plano simple y legible (sin dependencias externas de JSON):
-        ///   steamId\ttag\tx,y,z\tx,y,z...
+        ///   steamId\ttag\tx,y,z,bioma\tx,y,z,bioma...
+        /// El campo "bioma" (Feature "color y modelo por bioma") se agrego
+        /// despues del formato original de 3 componentes por posicion;
+        /// Load() sigue aceptando lineas viejas sin bioma (lo resuelve de
+        /// nuevo la primera vez que confirma el bloque en el mundo real).
         /// </summary>
         public void Save()
         {
@@ -426,7 +472,8 @@ namespace PortalMod
                         sb.Append(playerEntry.Key).Append('\t').Append(tagEntry.Key);
                         foreach (var pos in tagEntry.Value)
                         {
-                            sb.Append('\t').Append(pos.x).Append(',').Append(pos.y).Append(',').Append(pos.z);
+                            var biome = GetBiome(pos) ?? string.Empty;
+                            sb.Append('\t').Append(pos.x).Append(',').Append(pos.y).Append(',').Append(pos.z).Append(',').Append(biome);
                         }
                         sb.Append('\n');
                     }
@@ -459,6 +506,7 @@ namespace PortalMod
             {
                 _portals.Clear();
                 _positionLookup.Clear();
+                _biomes.Clear();
 
                 var discardedCount = 0;
 
@@ -483,7 +531,10 @@ namespace PortalMod
                     for (var i = 2; i < parts.Length; i++)
                     {
                         var coords = parts[i].Split(',');
-                        if (coords.Length != 3)
+                        // 3 componentes = formato viejo (sin bioma, de antes de
+                        // la Feature "color y modelo por bioma); 4 = formato
+                        // actual (x,y,z,bioma). Se aceptan ambos.
+                        if (coords.Length != 3 && coords.Length != 4)
                         {
                             continue;
                         }
@@ -492,6 +543,8 @@ namespace PortalMod
                             int.Parse(coords[0], CultureInfo.InvariantCulture),
                             int.Parse(coords[1], CultureInfo.InvariantCulture),
                             int.Parse(coords[2], CultureInfo.InvariantCulture));
+
+                        var savedBiome = coords.Length == 4 && coords[3].Length > 0 ? coords[3] : null;
 
                         // FIX real (portales apareciendo en posiciones random al
                         // cargar, incluso flotando en el aire): antes de
@@ -520,6 +573,17 @@ namespace PortalMod
                             continue;
                         }
 
+                        // Formato viejo sin bioma guardado: si ya se confirmo
+                        // que el bloque existe (chunk cargado), aprovechar y
+                        // resolverlo ahora — Save() lo persistira en formato
+                        // nuevo la proxima vez que haya cambios.
+                        if (savedBiome == null && check == PortalBlockCheck.Present)
+                        {
+                            savedBiome = ResolveBiomeName(pos);
+                            _dirty = true;
+                        }
+
+                        _biomes[pos] = savedBiome;
                         positions.Add(pos);
                         _positionLookup[pos] = new PortalRef(steamId, tag);
                     }

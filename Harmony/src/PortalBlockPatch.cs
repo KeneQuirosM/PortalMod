@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using HarmonyLib;
 using UnityEngine;
 
@@ -30,6 +31,20 @@ namespace PortalMod
             return IsPortalBlock(blockValue.Block);
         }
 
+        // FIX real (encontrado al implementar la validacion de portales al
+        // cargar el mundo, ver PortalManager.Load): en un momento
+        // "portalBlockActivePulseHigh" falto en la comparacion de nombres de
+        // abajo. PortalVisualFX.AmbientTick alterna el BlockValue de un
+        // portal vinculado entre varias variantes (ver blocks.xml) — un
+        // nombre faltante aqui hace fallar en silencio CUALQUIER patch que
+        // dependa de IsPortalBlock (activacion con tecla E, destruccion,
+        // validacion de carga) durante esa fase. Para no repetir el bug al
+        // agregar las variantes por bioma (Feature de color/modelo por
+        // bioma), la lista completa de nombres vive en un unico lugar:
+        // PortalBiomes.GetAllBlockNames().
+        private static readonly HashSet<string> AllPortalBlockNames =
+            new HashSet<string>(PortalBiomes.GetAllBlockNames());
+
         internal static bool IsPortalBlock(Block block)
         {
             if (block == null)
@@ -37,18 +52,7 @@ namespace PortalMod
                 return false;
             }
 
-            // FIX real (encontrado al implementar la validacion de portales
-            // al cargar el mundo, ver PortalManager.Load): faltaba
-            // "portalBlockActivePulseHigh" aqui. PortalVisualFX.AmbientTick
-            // alterna el BlockValue de un portal vinculado entre
-            // "portalBlockActive" y "portalBlockActivePulseHigh" cada ~0.6s
-            // (ver blocks.xml) - sin este tercer nombre, CUALQUIER patch que
-            // dependa de IsPortalBlock (activacion con tecla E, destruccion,
-            // y ahora la validacion de carga) fallaba en silencio la mitad
-            // del tiempo, justo cuando el bloque estaba en la fase "alta"
-            // del pulso.
-            var name = block.GetBlockName();
-            return name == "portalBlock" || name == "portalBlockActive" || name == "portalBlockActivePulseHigh";
+            return AllPortalBlockNames.Contains(block.GetBlockName());
         }
     }
 

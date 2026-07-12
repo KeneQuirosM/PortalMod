@@ -165,10 +165,13 @@
     </block>
 
     <!--
-        Variante "ACTIVA" (par vinculado, fase BAJA del pulso): luz azul-
+        Variante "ACTIVA" (par vinculado + con energia, fase BAJA del pulso;
+        tambien la variante "default/ciudad" de la Feature de color/modelo
+        por bioma — ver bloque PORTAL_BLOCK_BIOMES mas abajo): luz azul-
         violeta y mas brillante que el estado inactivo. El estado real
-        (huerfano/vinculado) siempre vive en PortalManager - este bloque es
-        puramente cosmetico y es aplicado por PortalVisualFX.SetBlockState().
+        (huerfano/vinculado/con o sin energia) siempre vive en
+        PortalManager/PortalPower - este bloque es puramente cosmetico y es
+        aplicado por PortalVisualFX.RefreshBlockState().
 
         MODELO restaurado a gupFuturePortal6.unity3d?guppyFuturePortal6.prefab
         (el diseñado para el estado activo). Historial: este modelo tiene
@@ -213,6 +216,107 @@
     -->
     <block name="portalBlockActivePulseHigh">
       <property name="Extends" value="portalBlockActive" />
+      <property name="Light" value="1.0" />
+    </block>
+
+    <!-- ================= PORTAL_BLOCK_BIOMES: color y modelo por bioma =================
+        Feature: al vincularse un par de portales, PortalManager.RegisterPortal
+        detecta el bioma real de la posicion (World.GetBiome(x,z), campo real
+        BiomeDefinition.m_sBiomeName — confirmado por decompilacion) y
+        PortalVisualFX.RefreshBlockState elige automaticamente una de estas
+        variantes en vez de la variante "default" (portalBlockActive/
+        PulseHigh, ver arriba — bioma "ciudad"/cualquier bioma sin mapeo
+        especifico, sin cambios: sigue usando gupFuturePortal6 + morado).
+
+        Nombres de bioma REALES confirmados contra Data/Config/biomes.xml
+        vanilla instalado: "snow", "wasteland", "burnt_forest", "pine_forest",
+        "desert" (existe ademas "underwater", sin mapeo especifico — usa
+        "default"). NO existe un bioma "ciudad"/"city" en V3.0: las ciudades
+        son prefabs/POIs colocados SOBRE un bioma normal (tipicamente
+        wasteland/pine_forest), no un bioma propio — el "default/ciudad" del
+        pedido original se interpreta como el fallback para cualquier bioma
+        sin mapeo especifico.
+
+        TintColor de cada variante = conversion RGB (0-1, canal alpha
+        ignorado — TintColor no tiene canal alpha, igual que el resto del
+        mod) a hex: hex(R*255)+hex(G*255)+hex(B*255). Misma formula ya usada
+        para el morado de portalBlockActive (0.5,0.2,1.0 -> 8033FF,
+        verificable arriba) — mismo mecanismo real que remplazo a la
+        "LightColor" fabricada que nunca existio como propiedad (ver FIX
+        real en portalBlock arriba). "Light" se deja igual que
+        portalBlockActive/PulseHigh (0.8/1.0) en todas las variantes: solo
+        cambia el matiz (TintColor), no el brillo.
+
+        Sin energia cercana (Feature "requiere electricidad", ver
+        PortalPower.cs): el portal SIEMPRE usa el bloque base "portalBlock"
+        (inactivo, gupFuturePortal1, sin importar el bioma) — no hay una
+        variante "vinculado pero sin energia" propia; PortalVisualFX ya
+        aplica esta regla en RefreshBlockState.
+
+        TODO: los nombres de prefab dentro de gupFuturePortal2/3/5.unity3d NO
+        estan confirmados contra el XML original del mod de assets (SCore),
+        a diferencia de gupFuturePortal1/4/6 (ver TESTING.md seccion 10.1).
+        Se asume el mismo patron "guppyFuturePortalN.prefab" (consistente en
+        los 3 casos ya confirmados), pero falta verificar en el juego real si
+        el modelo no carga. TODO adicional: el mapeo pedido para
+        "burnt_forest" reutiliza gupFuturePortal4.unity3d, que hasta ahora
+        solo se habia confirmado como prefab de PARTICULA (buffs.xml,
+        PlayParticleEffect), no como modelo de bloque (Shape="ModelEntity",
+        necesita mesh/collider) — falta confirmar que el bundle tambien sirve
+        para este uso.
+    -->
+    <block name="portalBlockActiveSnow">
+      <property name="Extends" value="portalBlockActive" />
+      <property name="Model" value="#@modfolder:Resources/gupFuturePortal2.unity3d?guppyFuturePortal2.prefab" />
+      <!-- Bioma "snow": azul frio, RGB (0.2, 0.5, 1.0) -->
+      <property name="TintColor" value="3380FF" />
+    </block>
+    <block name="portalBlockActivePulseHighSnow">
+      <property name="Extends" value="portalBlockActiveSnow" />
+      <property name="Light" value="1.0" />
+    </block>
+
+    <block name="portalBlockActiveWasteland">
+      <property name="Extends" value="portalBlockActive" />
+      <property name="Model" value="#@modfolder:Resources/gupFuturePortal3.unity3d?guppyFuturePortal3.prefab" />
+      <!-- Bioma "wasteland": verde radiactivo, RGB (0.2, 1.0, 0.2) -->
+      <property name="TintColor" value="33FF33" />
+    </block>
+    <block name="portalBlockActivePulseHighWasteland">
+      <property name="Extends" value="portalBlockActiveWasteland" />
+      <property name="Light" value="1.0" />
+    </block>
+
+    <block name="portalBlockActiveBurntForest">
+      <property name="Extends" value="portalBlockActive" />
+      <property name="Model" value="#@modfolder:Resources/gupFuturePortal4.unity3d?guppyFuturePortal4.prefab" />
+      <!-- Bioma "burnt_forest": naranja, RGB (1.0, 0.4, 0.0) -->
+      <property name="TintColor" value="FF6600" />
+    </block>
+    <block name="portalBlockActivePulseHighBurntForest">
+      <property name="Extends" value="portalBlockActiveBurntForest" />
+      <property name="Light" value="1.0" />
+    </block>
+
+    <block name="portalBlockActivePineForest">
+      <property name="Extends" value="portalBlockActive" />
+      <property name="Model" value="#@modfolder:Resources/gupFuturePortal1.unity3d?guppyFuturePortal1.prefab" />
+      <!-- Bioma "pine_forest": verde natural, RGB (0.3, 0.8, 0.3) -->
+      <property name="TintColor" value="4DCC4D" />
+    </block>
+    <block name="portalBlockActivePulseHighPineForest">
+      <property name="Extends" value="portalBlockActivePineForest" />
+      <property name="Light" value="1.0" />
+    </block>
+
+    <block name="portalBlockActiveDesert">
+      <property name="Extends" value="portalBlockActive" />
+      <property name="Model" value="#@modfolder:Resources/gupFuturePortal5.unity3d?guppyFuturePortal5.prefab" />
+      <!-- Bioma "desert": amarillo, RGB (1.0, 0.8, 0.1) -->
+      <property name="TintColor" value="FFCC1A" />
+    </block>
+    <block name="portalBlockActivePulseHighDesert">
+      <property name="Extends" value="portalBlockActiveDesert" />
       <property name="Light" value="1.0" />
     </block>
 

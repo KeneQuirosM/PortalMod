@@ -4,17 +4,15 @@ namespace PortalMod
 {
     /// <summary>
     /// Efectos visuales del portal usando UNICAMENTE recursos vanilla (sin
-    /// AssetBundles ni modelos externos):
+    /// AssetBundles externos que no formen ya parte de Resources/):
     ///
     ///  - Cambio de estado inactivo/activo: se resuelve intercambiando el
-    ///    BlockValue del bloque colocado entre "portalBlock" (huerfano),
-    ///    "portalBlockActive" (vinculado, fase baja del pulso) y
-    ///    "portalBlockActivePulseHigh" (vinculado, fase alta del pulso) —
-    ///    los tres son variantes del mismo bloque base definidas en
-    ///    blocks.xml, cada una con sus propias propiedades Light* vanilla.
-    ///    Alternar entre las dos variantes activas simula el "leve
-    ///    pulso/parpadeo" pedido, sin depender de una propiedad de flicker
-    ///    nativa que no se pudo confirmar (ver TODO en blocks.xml).
+    ///    BlockValue del bloque colocado entre "portalBlock" (huerfano o sin
+    ///    energia) y una variante activa (vinculado Y con energia cercana —
+    ///    ver PortalPower) elegida segun el bioma del portal (ver
+    ///    PortalBiomes) — los nombres de bloque son variantes del mismo
+    ///    bloque base definidas en blocks.xml, cada una con sus propias
+    ///    propiedades Model/Light/TintColor.
     ///
     ///  - Particulas ambientales (idle) y de rafaga de teletransporte:
     ///    reutilizan nombres de particulas YA EXISTENTES en el juego base
@@ -23,20 +21,17 @@ namespace PortalMod
     /// </summary>
     internal static class PortalVisualFX
     {
-        internal enum BlockState
+        private enum BlockState
         {
             Inactive,
             Active,
             ActivePulseHigh
         }
 
-        private const string InactiveBlockName = "portalBlock";
-        private const string ActiveBlockName = "portalBlockActive";
-        private const string ActivePulseHighBlockName = "portalBlockActivePulseHigh";
-
         private const float AmbientTickInterval = 0.6f;
-        // Las particulas del estado huerfano son "escasas": solo se disparan
-        // 1 de cada N ticks ambientales para lograr el efecto lento/en espera.
+        // Las particulas del estado huerfano/sin energia son "escasas": solo
+        // se disparan 1 de cada N ticks ambientales para lograr el efecto
+        // lento/en espera.
         private const int OrphanParticleTickModulo = 4;
 
         private static float _nextAmbientTick;
@@ -44,15 +39,52 @@ namespace PortalMod
         private static int _ambientTickCount;
 
         // ========================================================================
-        // CAMBIO DE ESTADO DEL BLOQUE (inactivo <-> activo)
+        // ESTADO COMBINADO: vinculado (PortalManager) + energia (PortalPower)
         // ========================================================================
 
         /// <summary>
-        /// Intercambia el BlockValue en el mundo por la variante correspondiente
-        /// al nuevo estado. No hace nada si el bloque ya esta en ese estado
+        /// True si el portal en esta posicion esta vinculado a su par
+        /// (PortalManager.IsPositionActive) Y tiene una fuente de energia
+        /// activa cerca (PortalPower.HasNearbyPower, Feature "requiere
+        /// electricidad"). Unico punto que combina ambas condiciones para
+        /// decidir si el portal se ve/comporta como "activo" — usado tanto
+        /// para elegir el modelo del bioma (RefreshBlockState) como, en
+        /// PortalTeleport.cs, para permitir o no el teletransporte en si.
+        /// </summary>
+        internal static bool IsLinkedAndPowered(Vector3i pos)
+        {
+            return PortalManager.Instance.IsPositionActive(pos) && PortalPower.HasNearbyPower(pos);
+        }
+
+        /// <summary>
+        /// Reevalua y aplica el bloque correcto para una posicion de portal:
+        /// variante del bioma (con pulso si corresponde) si esta vinculado Y
+        /// tiene energia, o el bloque base "portalBlock" (inactivo, sin
+        /// importar el bioma — pedido explicito de la Feature de energia) en
+        /// cualquier otro caso. Se recibe "linkedAndPowered" ya calculado (en
+        /// vez de recalcularlo aqui) para que AmbientTick pueda reusarlo
+        /// tambien al decidir que particula disparar, sin consultar
+        /// PortalManager/PowerManager dos veces por portal por tick.
+        /// </summary>
+        internal static void RefreshBlockState(Vector3i pos, bool linkedAndPowered, bool pulseHighFrame)
+        {
+            if (linkedAndPowered)
+            {
+                var biome = PortalManager.Instance.GetBiome(pos);
+                SetBlockState(pos, pulseHighFrame ? BlockState.ActivePulseHigh : BlockState.Active, biome);
+            }
+            else
+            {
+                SetBlockState(pos, BlockState.Inactive, null);
+            }
+        }
+
+        /// <summary>
+        /// Intercambia el BlockValue en el mundo por la variante
+        /// correspondiente. No hace nada si el bloque ya esta en ese estado
         /// (evita trafico de red / parpadeo innecesario en cada ambient tick).
         /// </summary>
-        public static void SetBlockState(Vector3i pos, BlockState state)
+        private static void SetBlockState(Vector3i pos, BlockState state, string biome)
         {
             var world = GameManager.Instance != null ? GameManager.Instance.World : null;
             if (world == null)
@@ -60,9 +92,9 @@ namespace PortalMod
                 return;
             }
 
-            var targetName = state == BlockState.Inactive ? InactiveBlockName
-                : state == BlockState.Active ? ActiveBlockName
-                : ActivePulseHighBlockName;
+            var targetName = state == BlockState.Inactive
+                ? PortalBiomes.InactiveBlockName
+                : PortalBiomes.GetActiveBlockName(biome, pulseHigh: state == BlockState.ActivePulseHigh);
 
             // TODO: verificar en Assembly-CSharp V3.0 la API real para resolver
             // un Block por nombre y construir su BlockValue. Candidato de builds
@@ -114,21 +146,21 @@ namespace PortalMod
 
             foreach (var pos in PortalManager.Instance.GetAllPortalPositions())
             {
-                if (PortalManager.Instance.IsPositionActive(pos))
+                var linkedAndPowered = IsLinkedAndPowered(pos);
+                RefreshBlockState(pos, linkedAndPowered, _pulseHighFrame);
+
+                if (linkedAndPowered)
                 {
-                    // Estado ACTIVO: pulso de luz alternando entre las dos
-                    // variantes de bloque, mas particulas densas/rapidas cada tick.
-                    SetBlockState(pos, _pulseHighFrame ? BlockState.ActivePulseHigh : BlockState.Active);
+                    // Estado ACTIVO (vinculado + con energia): particulas
+                    // densas/rapidas cada tick.
                     SpawnAmbientParticle(pos, intense: true);
                 }
-                else
+                else if (_ambientTickCount % OrphanParticleTickModulo == 0)
                 {
-                    // Estado INACTIVO/huerfano: luz tenue estatica ya definida en
-                    // blocks.xml (portalBlock), sin pulso; particulas escasas.
-                    if (_ambientTickCount % OrphanParticleTickModulo == 0)
-                    {
-                        SpawnAmbientParticle(pos, intense: false);
-                    }
+                    // Estado INACTIVO (huerfano O sin energia): luz tenue
+                    // estatica ya definida en blocks.xml (portalBlock), sin
+                    // pulso; particulas escasas.
+                    SpawnAmbientParticle(pos, intense: false);
                 }
             }
         }
@@ -141,12 +173,7 @@ namespace PortalMod
             // Data/Config/*.xml vanilla instalado, usados ahi en atributos
             // particle="..." de verdad): "p_electric_shock" para el pulso
             // intenso del par vinculado, "p_sparks_fuse" (mas sutil) para el
-            // estado huerfano/inactivo. Los nombres anteriores
-            // ("electricsparks_lightning"/"electricsparks_small") eran
-            // inventados — 0 coincidencias en todo el juego — y ademas la
-            // construccion del ParticleEffect estaba rota (ver FIX real en
-            // SpawnParticleServer), asi que nunca se habian detectado como
-            // invalidos.
+            // estado huerfano/inactivo.
             var particleName = intense ? "p_electric_shock" : "p_sparks_fuse";
 
             SpawnParticleServer(particleName, worldPos);
@@ -174,18 +201,7 @@ namespace PortalMod
         // ~cada 0.6s por portal): decompilando ParticleEffect.GetDynamicTransform
         // contra el Assembly-CSharp.dll real se confirmo que ese log se dispara
         // cuando "ParticleId" (un int) no esta en la tabla de particulas
-        // cargadas. El codigo anterior (por reflection) creaba el
-        // ParticleEffect con su constructor SIN ARGUMENTOS y luego intentaba
-        // asignar campos "Name"/"ParticleName" que NO EXISTEN en la clase real
-        // (sus campos reales son: type, attachment, pos, rot, color,
-        // lightValue, ParticleId, soundName, volumeScale,
-        // additionalHitSoundName, opqueTextureId, parentEntityId,
-        // parentTransform, debugName) — ambos TrySetMember fallaban en
-        // silencio, "ParticleId" quedaba en su valor por defecto (0), y por
-        // eso SIEMPRE se logueaba "Unknown particle effect: 0" al llamar
-        // SpawnParticleEffectServer.
-        //
-        // El constructor real que si asigna "ParticleId = ToId(_name)" es:
+        // cargadas. El constructor real que si asigna "ParticleId = ToId(_name)" es:
         //   ParticleEffect(string _name, Vector3 _pos, float _lightValue,
         //       Color _color, string _soundName, Transform _parentTransform,
         //       bool _OLDCreateColliders, float _volumeScale = 1f,

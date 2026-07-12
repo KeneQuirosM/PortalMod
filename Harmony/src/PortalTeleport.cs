@@ -24,6 +24,11 @@ namespace PortalMod
         private static readonly Dictionary<string, float> _lastOrphanMessageTime = new Dictionary<string, float>();
         private const float OrphanMessageThrottleSeconds = 3f;
 
+        // Mismo throttle, pero para el mensaje de "sin energia" (Feature
+        // "requiere electricidad").
+        private static readonly Dictionary<string, float> _lastNoPowerMessageTime = new Dictionary<string, float>();
+        private const float NoPowerMessageThrottleSeconds = 3f;
+
         public static void Init()
         {
             API.Log("PortalTeleport inicializado.");
@@ -121,6 +126,20 @@ namespace PortalMod
                 return;
             }
 
+            // Feature "requiere electricidad": el portal de ORIGEN (el que el
+            // jugador esta pisando/activando) necesita una fuente de energia
+            // encendida dentro de PortalPower.RangeBlocks bloques — ver
+            // PortalPower.cs para la aclaracion sobre por que esto es un
+            // chequeo de distancia propio y no el sistema de cableado real
+            // del juego. No se exige energia tambien en el DESTINO: alcanza
+            // con que el portal que el jugador esta usando activamente tenga
+            // energia para iniciar el viaje.
+            if (!PortalPower.HasNearbyPower(originPos))
+            {
+                ShowNoPowerMessageThrottled(player, steamId, tag);
+                return;
+            }
+
             ExecuteTeleport(player, steamId, originPos, destinationBlockPos);
         }
 
@@ -189,6 +208,20 @@ namespace PortalMod
 
             _lastOrphanMessageTime[key] = now;
             PortalHud.ShowOrphanMessage(player, tag);
+        }
+
+        private static void ShowNoPowerMessageThrottled(EntityPlayer player, string steamId, string tag)
+        {
+            var key = steamId + "|" + tag;
+            var now = Time.time;
+
+            if (_lastNoPowerMessageTime.TryGetValue(key, out var last) && now - last < NoPowerMessageThrottleSeconds)
+            {
+                return;
+            }
+
+            _lastNoPowerMessageTime[key] = now;
+            PortalHud.ShowNoPowerMessage(player);
         }
     }
 }

@@ -99,5 +99,11 @@ namespace PortalMod
         {
             ShowMessage(player, string.Format(Localization.Get(linked ? "portalHudTargetLinked" : "portalHudTargetOrphan"), tag));
         }
+
+        /// <summary>Feature "requiere electricidad": mensaje al intentar usar un portal sin energia cerca — ver PortalPower/PortalTeleport.</summary>
+        public static void ShowNoPowerMessage(EntityPlayer player)
+        {
+            ShowMessage(player, Localization.Get("portalNoEnergy"));
+        }
     }
 }
