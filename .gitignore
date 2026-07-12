@@ -4,3 +4,7 @@
 # Ver Harmony/PortalMod.csproj.template para la plantilla versionada y
 # README.md para las instrucciones de copiado.
 Harmony/PortalMod.csproj
+
+# Carpeta generada por build_release.ps1 (release lista para comprimir),
+# no es codigo fuente.
+Release/
