@@ -39,12 +39,27 @@ namespace PortalMod
             // resuelven (no hay spam real que filtrar), asi que el filtro de
             // log de "Unknown particle effect" (LogFilterPatch.cs) NO debe
             // registrarse en ese caso — evita ocultar un error real y
-            // distinto detras del mismo filtro. API real confirmada por
-            // decompilacion: ModManager.ModLoaded(string _modName) (estatico,
-            // bool) — mas simple que ModManager.GetMod(string, bool) para
-            // solo verificar presencia, sin necesitar el objeto Mod en si.
-            var sCorePresent = ModManager.ModLoaded("0-SCore");
-            Log($"0-SCore {(sCorePresent ? "detectado" : "no detectado")} — filtro de log de particulas {(sCorePresent ? "DESACTIVADO (SCore resuelve sus propias particulas)" : "activo")}.");
+            // distinto detras del mismo filtro.
+            //
+            // FIX real (el chequeo original "ModManager.ModLoaded('0-SCore')"
+            // nunca detectaba SCore aunque estuviera instalado): confirmado
+            // en el log real del juego que el mod de SCore carga con
+            // Mod.Name EXACTO "0-SCore_sphereii" (no "0-SCore" a secas) — y
+            // ModManager.ModLoaded(_modName) compara ese nombre por igualdad
+            // exacta contra su diccionario interno (indexado por Mod.Name,
+            // confirmado decompilando ModManager.loadModsFromFolder), asi que
+            // "0-SCore" nunca hacia match. Se cambia a una busqueda flexible
+            // por substring sobre ModManager.GetLoadedMods() (real, ya
+            // confirmada) para tolerar variaciones de nombre entre forks/
+            // versiones de SCore (ej. un futuro "0-SCore" sin sufijo, o
+            // "0_SCore"), en vez de depender de un nombre exacto fragil.
+            // Mod.Name es un string plano (propiedad real de la clase Mod,
+            // confirmada por reflection) — NO existe una property anidada
+            // "Mod.ModInfo" en la clase real (esa estructura, con un DataItem
+            // "Name.Value", pertenece al parser V1 viejo de ModInfo.xml, no a
+            // la clase Mod que expone ModManager en tiempo de ejecucion).
+            var sCorePresent = ModManager.GetLoadedMods().Any(m => m.Name != null && m.Name.Contains("SCore"));
+            Log("SCore detectado: " + sCorePresent);
             if (!sCorePresent)
             {
                 Log_Error_ParticleFilter_Patch.Register(harmony);

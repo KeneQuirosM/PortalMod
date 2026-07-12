@@ -37,52 +37,54 @@
     </recipe>
 
     <!-- ================= ESTILOS DE PORTAL (Opcion A: 6 items separados) =================
-        Recetas identicas en ingredientes/costo entre si, una por cada item
-        de estilo (ver items.xml). Ingredientes segun lo pedido: 15x
-        resourceScrapIron, 5x resourceForgedIron, 3x resourceElectricParts.
-
-        FIX real: el pedido original nombraba el ingrediente "resourceIron",
-        que no existe en items.xml vanilla (0 coincidencias) — el recurso de
-        chatarra de hierro real, ya usado en la receta original de
-        portalBlockItem arriba y confirmado en items.xml vanilla, es
-        "resourceScrapIron". "resourceForgedIron"/"resourceElectricParts" SI
-        existen tal cual, confirmados igual contra items.xml vanilla.
+        Recetas UNIFICADAS: mismos ingredientes/costo que portalBlockItem
+        (arriba) para los 6 items de estilo (ver items.xml) — pedido
+        explicito de unificar todas las recetas de portal a un unico costo.
+        `name` de cada <recipe> apunta al ITEM real (sufijo "Item" — ver FIX
+        real de colision de nombre item/bloque en items.xml/README.md), no
+        al bloque.
     -->
 
     <recipe name="portalBlock_platformItem" count="1" craft_time="60" craft_area="workbench" tags="workbenchCrafting">
-      <ingredient name="resourceScrapIron" count="15" />
-      <ingredient name="resourceForgedIron" count="5" />
-      <ingredient name="resourceElectricParts" count="3" />
+      <ingredient name="resourceScrapIron" count="1500" />
+      <ingredient name="resourceForgedIron" count="450" />
+      <ingredient name="resourceElectricParts" count="125" />
+      <ingredient name="resourceDuctTape" count="20" />
     </recipe>
 
     <recipe name="portalBlock_gridItem" count="1" craft_time="60" craft_area="workbench" tags="workbenchCrafting">
-      <ingredient name="resourceScrapIron" count="15" />
-      <ingredient name="resourceForgedIron" count="5" />
-      <ingredient name="resourceElectricParts" count="3" />
+      <ingredient name="resourceScrapIron" count="1500" />
+      <ingredient name="resourceForgedIron" count="450" />
+      <ingredient name="resourceElectricParts" count="125" />
+      <ingredient name="resourceDuctTape" count="20" />
     </recipe>
 
     <recipe name="portalBlock_clawsItem" count="1" craft_time="60" craft_area="workbench" tags="workbenchCrafting">
-      <ingredient name="resourceScrapIron" count="15" />
-      <ingredient name="resourceForgedIron" count="5" />
-      <ingredient name="resourceElectricParts" count="3" />
+      <ingredient name="resourceScrapIron" count="1500" />
+      <ingredient name="resourceForgedIron" count="450" />
+      <ingredient name="resourceElectricParts" count="125" />
+      <ingredient name="resourceDuctTape" count="20" />
     </recipe>
 
     <recipe name="portalBlock_cylinderItem" count="1" craft_time="60" craft_area="workbench" tags="workbenchCrafting">
-      <ingredient name="resourceScrapIron" count="15" />
-      <ingredient name="resourceForgedIron" count="5" />
-      <ingredient name="resourceElectricParts" count="3" />
+      <ingredient name="resourceScrapIron" count="1500" />
+      <ingredient name="resourceForgedIron" count="450" />
+      <ingredient name="resourceElectricParts" count="125" />
+      <ingredient name="resourceDuctTape" count="20" />
     </recipe>
 
     <recipe name="portalBlock_wingsItem" count="1" craft_time="60" craft_area="workbench" tags="workbenchCrafting">
-      <ingredient name="resourceScrapIron" count="15" />
-      <ingredient name="resourceForgedIron" count="5" />
-      <ingredient name="resourceElectricParts" count="3" />
+      <ingredient name="resourceScrapIron" count="1500" />
+      <ingredient name="resourceForgedIron" count="450" />
+      <ingredient name="resourceElectricParts" count="125" />
+      <ingredient name="resourceDuctTape" count="20" />
     </recipe>
 
     <recipe name="portalBlock_archItem" count="1" craft_time="60" craft_area="workbench" tags="workbenchCrafting">
-      <ingredient name="resourceScrapIron" count="15" />
-      <ingredient name="resourceForgedIron" count="5" />
-      <ingredient name="resourceElectricParts" count="3" />
+      <ingredient name="resourceScrapIron" count="1500" />
+      <ingredient name="resourceForgedIron" count="450" />
+      <ingredient name="resourceElectricParts" count="125" />
+      <ingredient name="resourceDuctTape" count="20" />
     </recipe>
 
   </append>

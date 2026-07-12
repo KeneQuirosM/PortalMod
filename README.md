@@ -98,10 +98,10 @@ cp Harmony/PortalMod.csproj.template Harmony/PortalMod.csproj
    `Claw Portal` (`portalBlock_clawsItem`), `Cylinder Portal`
    (`portalBlock_cylinderItem`), `Wings Portal` (`portalBlock_wingsItem`) o
    `Arch Portal` (`portalBlock_archItem`) — o el `Teleport Portal`
-   (`portalBlockItem`) original. Costo de los 6 estilos nuevos: 15×
-   Chatarra de Hierro, 5× Hierro Forjado, 3× Piezas Eléctricas, 60 segundos
-   (el `Teleport Portal` original tiene un costo distinto, mayor). El
-   estilo elegido queda fijo para ese portal — no se puede cambiar después
+   (`portalBlockItem`) original. Los 7 (los 6 estilos + el original) usan
+   la MISMA receta: 1500× Chatarra de Hierro, 450× Hierro Forjado, 125×
+   Piezas Eléctricas, 20× Cinta Adhesiva, 60 segundos. El estilo elegido
+   queda fijo para ese portal — no se puede cambiar después
    sin romperlo y volver a colocarlo.
 2. Coloca el bloque donde quieras el primer portal. Al colocarlo se abrirá
    automáticamente una ventana pidiendo un **tag** (nombre), por ejemplo

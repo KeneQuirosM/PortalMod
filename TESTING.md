@@ -233,6 +233,10 @@ cambia según el bioma donde se vinculó el par:
       ("Platform Portal"/"Portal Plataforma", etc.).
 - [ ] El item original `Teleport Portal` (`portalBlockItem`) SIGUE
       disponible sin cambios (estilo "legacy").
+- [ ] Los 7 items (los 6 estilos + el original) muestran la MISMA receta:
+      1500× resourceScrapIron, 450× resourceForgedIron, 125×
+      resourceElectricParts, 20× resourceDuctTape, workbench, 60s (recetas
+      unificadas — ver `Config/recipes.xml`).
 - [ ] Colocar cada estilo muestra su modelo 3D correspondiente en estado
       inactivo — revisar el log en `RegisterPortal`: `[PortalMod] Estilo
       detectado para portal en X,Y,Z: <platform/grid/claws/cylinder/wings/
@@ -423,6 +427,17 @@ cada uno sigue sin probarse:
       de los valores `#@modfolder:...?prefab` o el formato de
       `AttachPrefabToEntity`/`RemovePrefabFromEntity` en `buffs.xml` le cae
       mal al parser específico del juego.
+
+- [x] `ModManager.ModLoaded("0-SCore")` nunca detectaba 0-SCore aunque
+      estuviera instalado — **confirmado en el log real del juego** (no en
+      este entorno de desarrollo): el mod carga con `Mod.Name` exacto
+      `"0-SCore_sphereii"` (visible en el log como `"0-SCore_sphereii
+      (3.0.16.732)"`), no `"0-SCore"`. `ModManager.ModLoaded` compara por
+      igualdad exacta contra ese nombre. **Corregido** en `API.cs`: ahora
+      usa `ModManager.GetLoadedMods().Any(m => m.Name.Contains("SCore"))`
+      (búsqueda flexible por substring, tolera variaciones de nombre entre
+      forks/versiones) en vez de un nombre exacto. Log agregado: `[PortalMod]
+      SCore detectado: true/false`.
 
 ### 10.2 Comportamientos conocidos inofensivos (log)
 
