@@ -1,3 +1,4 @@
+using System.Linq;
 using UnityEngine;
 
 namespace PortalMod
@@ -200,6 +201,15 @@ namespace PortalMod
             _nextAmbientTick = Time.time + AmbientTickInterval;
             _ambientTickCount++;
 
+            // DIAGNOSTICO TEMPORAL (particulas invisibles pese a no haber
+            // errores): confirmar en que contexto corre este tick —
+            // GameManager.IsDedicatedServer corta ParticleEffect.
+            // SpawnParticleEffect antes de instanciar nada visual (ver
+            // decompilacion citada en el chat). Quitar una vez diagnosticado.
+            API.Log($"[FX] AmbientTick — IsDedicatedServer={GameManager.IsDedicatedServer} " +
+                    $"IsServer={ConnectionManager.Instance.IsServer} " +
+                    $"portales={PortalManager.Instance.GetAllPortalPositions().Count()}");
+
             foreach (var pos in PortalManager.Instance.GetAllPortalPositions())
             {
                 // Leer el estado de energia real (TileEntityPowered.IsPowered,
@@ -275,6 +285,10 @@ namespace PortalMod
             {
                 return;
             }
+
+            // DIAGNOSTICO TEMPORAL (ver nota en AmbientTick). Quitar una vez diagnosticado.
+            API.Log($"[FX] SpawnParticle — IsDedicatedServer={GameManager.IsDedicatedServer} " +
+                    $"particleName={particleName} pos={worldPos}");
 
             var effect = new ParticleEffect(particleName, worldPos, 0f, Color.white, null, null, _OLDCreateColliders: false);
             GameManager.Instance.SpawnParticleEffectServer(effect, -1, _forceCreation: false, _worldSpawn: true);
