@@ -287,4 +287,74 @@ namespace PortalMod
             }
         }
     }
+
+    // ============================================================================
+    // 4) MODELO DEL BLOQUE INSTANCIADO -> activar manualmente los ParticleSystem
+    // embebidos en el prefab .unity3d (gupFuturePortalN), ya que vanilla NO los
+    // activa solo (ver investigacion en PortalVisualFX.cs: BlockShapeModelEntity.
+    // CloneModel es un Object.Instantiate() generico sin gating de SCore, asi
+    // que el problema NO es "falta SCore" sino que nadie llama Play() sobre
+    // esos ParticleSystem).
+    //
+    // Hook real confirmado por decompilacion (NO existe "OnBlockLoaded" util
+    // para esto: BlockShapeModelEntity.OnBlockAdded/OnBlockLoaded solo crean un
+    // BlockEntityData "stub" y no instancian nada todavia). El punto real
+    // donde el GameObject del modelo ya existe Y esta activo en la escena es:
+    //
+    //   Chunk.OnDisplayBlockEntities (llamado desde ChunkManager.
+    //   doCopyChunksToUnity, en el hilo principal de Unity, una vez por chunk
+    //   visible) hace, en este orden, para cada BlockEntityData:
+    //     1. objectForType = GameObjectPool.Instance.GetObjectForType(...)
+    //        (instancia/recicla el prefab del modelo)
+    //     2. blockEntityData.transform = objectForType.transform
+    //     3. block2.OnBlockEntityTransformBeforeActivated(...)
+    //     4. objectForType.SetActive(true)
+    //     5. block2.OnBlockEntityTransformAfterActivated(...)   <- aqui
+    //
+    // Block.OnBlockEntityTransformAfterActivated(WorldBase, Vector3i,
+    // BlockValue, BlockEntityData) es "public virtual" en la clase BASE
+    // "Block" (no en el shape), y BlockEntityData.transform (campo real,
+    // confirmado por reflection) apunta exactamente al GameObject que
+    // acaba de quedar activo (SetActive(true) ya se ejecuto un paso antes).
+    // Point (2) en las preguntas del chat: por eso se puede hacer
+    // "_ebcd.transform.GetComponentsInChildren<ParticleSystem>(true)"
+    // directamente aca, sin necesitar ningun Tick ni polling (punto 3 de las
+    // preguntas: no hace falta, este hook cubre el caso).
+    //
+    // OJO: como el GameObject viene de un pool (GameObjectPool.Instance),
+    // este hook se dispara cada vez que el chunk que contiene el portal
+    // vuelve a quedar visible (no solo la primera vez que se coloca el
+    // bloque) — se protege con "if (!ps.isPlaying)" para no reiniciar
+    // sistemas de particulas en loop que ya estan corriendo.
+    // ============================================================================
+    [HarmonyPatch(typeof(Block), "OnBlockEntityTransformAfterActivated")]
+    internal static class Block_OnBlockEntityTransformAfterActivated_Patch
+    {
+        private static void Postfix(BlockValue _blockValue, BlockEntityData _ebcd)
+        {
+            if (GameManager.IsDedicatedServer)
+            {
+                return;
+            }
+
+            if (!PortalBlockPatch.IsPortalBlock(_blockValue))
+            {
+                return;
+            }
+
+            var modelTransform = _ebcd?.transform;
+            if (modelTransform == null)
+            {
+                return;
+            }
+
+            foreach (var ps in modelTransform.GetComponentsInChildren<ParticleSystem>(true))
+            {
+                if (!ps.isPlaying)
+                {
+                    ps.Play();
+                }
+            }
+        }
+    }
 }
