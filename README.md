@@ -15,6 +15,25 @@ madre/hijo — cualquier portal es válido como origen o destino.
 - Para compilar el DLL: Visual Studio 2022 o JetBrains Rider, con soporte de
   **.NET Framework 4.8**.
 
+## Dependencias
+
+**Dependencia opcional: [0-SCore v3.0.x](https://www.nexusmods.com/7daystodie/mods/6176)**
+
+Sin SCore el mod funciona pero sin partículas animadas en los portales. Con
+SCore instalado las partículas se cargan automáticamente.
+
+Esta dependencia se declara en `ModInfo.xml` (`<Dependencies>`) como
+referencia informativa, pero **no es aplicada por el propio juego**: se
+confirmó decompilando `Mod.parseModInfoV2` (el parser real del formato
+`ModInfo.xml` que usa este mod) contra el `Assembly-CSharp.dll` de V3.0 que
+7 Days to Die **no tiene ningún mecanismo de dependencias entre mods** — no
+bloquea la carga, no reordena mods, no muestra advertencias por
+dependencias faltantes. La detección real y funcional ocurre en tiempo de
+ejecución: `API.InitMod` verifica `ModManager.ModLoaded("0-SCore")` (API
+real confirmada por decompilación) y, si SCore está presente, desactiva
+automáticamente el filtro de log de partículas (`LogFilterPatch.cs`) — ver
+sección *Notas técnicas* más abajo.
+
 ## Instalación (usuario final)
 
 1. Descarga o compila el mod (ver sección *Compilación* si necesitas generar
@@ -146,7 +165,21 @@ mismo tag.
 - **Atributo `visible`**: la visibilidad condicional de ventanas/controles se
   maneja con `visible="{binding}"`, ya no con `force_hide`.
 - **Assembly-CSharp publicized**: ver sección de compilación arriba.
-- **ModInfo.xml formato V2**: obligatorio desde V1.0; este mod ya lo usa.
+- **ModInfo.xml formato V2**: obligatorio desde V1.0; este mod ya lo usa
+  (raíz `<xml>` plana, sin envoltorio `<ModInfo>` — ese envoltorio activa el
+  parser V1 viejo en su lugar, confirmado en `Mod.LoadDefinitionFromFolder`).
+  El parser real del formato V2 (`Mod.parseModInfoV2`, confirmado por
+  decompilación) solo lee `Name`/`Version`/`DisplayName`/`Description`/
+  `Author`/`Website`/`SkipWithAntiCheat` — cualquier otro elemento (como
+  `GameVersion` o `Dependencies`, ambos presentes en este `ModInfo.xml`) se
+  ignora en silencio, sin error y sin efecto funcional. No existe un
+  mecanismo de dependencias entre mods en el loader de V3.0 — ver sección
+  *Dependencias* más arriba.
+- **Detección de mods opcionales**: `ModManager.ModLoaded(string _modName)`
+  (estático, real, confirmado por decompilación) verifica si un mod está
+  cargado por nombre — usado en `API.InitMod` para detectar `0-SCore` y
+  desactivar el filtro de log de partículas cuando está presente (ver
+  `LogFilterPatch.cs`).
 - **Configs vía XPath**: todos los archivos en `Config/` usan `<configs>`
   como raíz con comandos `<append xpath="...">` para inyectarse sobre los
   XML base del juego sin reemplazarlos.

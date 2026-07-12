@@ -34,6 +34,22 @@ namespace PortalMod
             harmony.PatchAll(Assembly.GetExecutingAssembly());
             Log($"Harmony patches aplicados ({harmony.GetPatchedMethods().Count()} metodos parcheados).");
 
+            // Dependencia OPCIONAL con 0-SCore: si esta cargado, sus propias
+            // particulas para los modelos gupFuturePortalN.unity3d SI se
+            // resuelven (no hay spam real que filtrar), asi que el filtro de
+            // log de "Unknown particle effect" (LogFilterPatch.cs) NO debe
+            // registrarse en ese caso — evita ocultar un error real y
+            // distinto detras del mismo filtro. API real confirmada por
+            // decompilacion: ModManager.ModLoaded(string _modName) (estatico,
+            // bool) — mas simple que ModManager.GetMod(string, bool) para
+            // solo verificar presencia, sin necesitar el objeto Mod en si.
+            var sCorePresent = ModManager.ModLoaded("0-SCore");
+            Log($"0-SCore {(sCorePresent ? "detectado" : "no detectado")} — filtro de log de particulas {(sCorePresent ? "DESACTIVADO (SCore resuelve sus propias particulas)" : "activo")}.");
+            if (!sCorePresent)
+            {
+                Log_Error_ParticleFilter_Patch.Register(harmony);
+            }
+
             // Inicializa los sistemas del mod. Ambos son singletons estaticos
             // para simplificar el acceso desde los patches de Harmony.
             PortalManager.Instance.Init();

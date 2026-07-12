@@ -1,5 +1,28 @@
 <!--
     ModInfo.xml — Formato V2 (obligatorio desde 7 Days to Die V1.0+)
+
+    Dependencia OPCIONAL con 0-SCore (ver README.md "Dependencias"): el
+    filtro de log de particulas (LogFilterPatch.cs) se desactiva
+    automaticamente si 0-SCore esta cargado (chequeo real via
+    ModManager.ModLoaded("0-SCore") en API.InitMod).
+
+    NOTA IMPORTANTE sobre <Dependencies> de abajo: decompilando
+    Mod.parseModInfoV2 (el parser REAL para este formato "V2" plano, sin
+    envoltorio <ModInfo>, que es el que usa este archivo) contra el
+    Assembly-CSharp.dll real se confirmo que SOLO lee estos elementos:
+    Name, Version, DisplayName, Description, Author, Website,
+    SkipWithAntiCheat. NO existe ningun mecanismo de "Dependencies"/
+    "Dependency" en el loader de mods de V3.0 — el propio juego NUNCA lee,
+    valida, ni hace cumplir esta seccion (a diferencia de otros
+    launchers/plataformas de mods que si podrian usar una convencion
+    similar). Se agrega de todas formas porque parseModInfoV2 ignora
+    silenciosamente cualquier elemento que no busca explicitamente (no
+    lanza excepcion como si haria el parser del formato V1 viejo, con
+    envoltorio <ModInfo>, confirmado tambien por decompilacion) — es decir,
+    esto es puramente informativo/documental para quien lea el archivo, NO
+    un mecanismo funcional de dependencia real. El chequeo real y
+    funcional de si 0-SCore esta presente ocurre en tiempo de ejecucion via
+    C# (API.cs, ver arriba), no aqui.
 -->
 <xml>
   <Name value="PortalMod" />
@@ -9,4 +32,7 @@
   <Author value="KeneQuirosM" />
   <Website value="https://github.com/KeneQuirosM/PortalMod" />
   <GameVersion value="3.0" />
+  <Dependencies>
+    <Dependency name="0-SCore" minVersion="3.0.0" />
+  </Dependencies>
 </xml>

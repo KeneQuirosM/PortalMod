@@ -34,10 +34,29 @@ namespace PortalMod
     /// exacto en todo Assembly-CSharp.dll) que esta frase la genera un UNICO
     /// punto del codigo — este filtro no puede tragarse silenciosamente un
     /// error de particulas no relacionado.
+    ///
+    /// DEPENDENCIA OPCIONAL CON 0-SCore: si 0-SCore esta cargado, sus
+    /// propias particulas SI existen/se resuelven (no se pudo verificar el
+    /// mecanismo interno de SCore contra este Assembly-CSharp.dll vanilla,
+    /// ya que SCore es un mod externo no instalado en este entorno de
+    /// referencia — esto se toma como dado por el pedido del usuario), asi
+    /// que este filtro NO debe registrarse en ese caso (suprimirlo
+    /// ocultaria un error real y distinto en vez del ruido inofensivo de
+    /// gupFuturePortal6 sin SCore). Por eso esta clase ya NO lleva
+    /// [HarmonyPatch] automatico (PatchAll la ignora): se registra
+    /// manualmente via Register(), llamado desde API.InitMod solo cuando
+    /// ModManager.ModLoaded("0-SCore") es false — ver API.cs.
     /// </summary>
-    [HarmonyPatch(typeof(global::Log), "Error", new[] { typeof(string) })]
     internal static class Log_Error_ParticleFilter_Patch
     {
+        /// <summary>Aplica el patch manualmente. Ver nota de la clase sobre por que no usa [HarmonyPatch] + PatchAll.</summary>
+        internal static void Register(Harmony harmony)
+        {
+            var original = AccessTools.Method(typeof(global::Log), "Error", new[] { typeof(string) });
+            var prefix = new HarmonyMethod(typeof(Log_Error_ParticleFilter_Patch), nameof(Prefix));
+            harmony.Patch(original, prefix);
+        }
+
         private static bool Prefix(string _txt)
         {
             return _txt == null || !_txt.Contains("Unknown particle effect");
