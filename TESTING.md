@@ -92,6 +92,42 @@ está pendiente de verificación real**.
 - [ ] El par restante queda como huérfano automáticamente.
 - [ ] El HUD muestra el mensaje de portal huérfano al intentar usar el
       par restante.
+- [x] El `portalBlock` se puede romper con herramientas normales (pico,
+      taladro) en un tiempo razonable — **FIX real**: `blocks.xml` tenía
+      `<property name="Health" value="4000" />` y
+      `<property name="HitMaskAll" value="0" />`, dos propiedades que NUNCA
+      existieron en el esquema de bloques de V3.0 (confirmado: 0
+      coincidencias de `Health`/`HitMaskAll` como propiedad de bloque en
+      TODO el `blocks.xml` vanilla instalado, y ningún campo `Health`/
+      `HitMaskAll` en la clase `Block` decompilada contra el
+      Assembly-CSharp.dll real — mismo patrón que el fiasco anterior de
+      `LightColor`/`LightIntensity`/`LightRadius`). Al ser propiedades
+      fantasma, el bloque nunca tuvo un `MaxDamage` real configurado y
+      quedaba con el valor por defecto del motor, sintiéndose indestructible
+      en la práctica. La propiedad real (confirmada: campo `MaxDamage` tipo
+      `int` en `Block`, 327 usos reales en el `blocks.xml` vanilla, rango
+      típico 30 en madera hasta 7000 en bloques de acero) se agrega ahora
+      como `<property name="MaxDamage" value="2000" />`, comparable al
+      material de nivel scrap/metal (`corrugatedMetal*`) de la receta del
+      portal.
+- [x] Portales guardados en el archivo de persistencia sin bloque real en
+      esa posición no se registran al cargar el mundo — ver FIX real de
+      `PortalManager.Load()` en la sección 10.
+
+## 9.1 Pruebas de persistencia entre mundos
+
+- [ ] Los portales guardados en un mundo/slot de guardado NO aparecen en
+      otro mundo distinto (antes del FIX de `GetSaveFilePath()` en la
+      sección 10, el archivo `portals.dat` era único por INSTALACIÓN del
+      mod, no por mundo — esto podía manifestarse como "portales apareciendo
+      en posiciones random, incluso flotando en el aire" al cargar un mundo
+      nuevo/distinto que reutilizaba coordenadas de un mundo anterior donde
+      sí existía un portal real ahí).
+- [ ] Revisar el log al cargar un mundo: debe aparecer una línea
+      `[PortalMod] Validando portal cargado en pos X,Y,Z - bloque existe:
+      true/false` por cada posición restaurada desde disco; las que dicen
+      `false` se descartan automáticamente (y no deberían volver a
+      aparecer en cargas futuras, una vez que el mod vuelva a guardar).
 
 ## 10. Pruebas de TODOs pendientes
 
@@ -151,8 +187,14 @@ juego real. Anotar el resultado real de cada uno al probar:
 - [ ] Confirmar método correcto de teletransporte de `EntityPlayer` en
       servidor dedicado (`PortalTeleport.cs`, actualmente usa
       `player.SetPosition`).
-- [ ] Confirmar API de persistencia oficial ligada al slot de guardado del
-      mundo (`PortalManager.cs`, actualmente usa un archivo propio del mod).
+- [x] Confirmar API de persistencia oficial ligada al slot de guardado del
+      mundo (`PortalManager.cs`) — **confirmada**: `GameIO.GetSaveGameDir()`
+      (estático, sin argumentos) devuelve la carpeta real del slot de
+      guardado activo, resuelta internamente vía `GamePrefs` (`GameWorld`,
+      `GameName`, `GameSaveStorageType`). `GetSaveFilePath()` ahora persiste
+      ahí (`<SaveGameDir>/portals.dat`) en vez de en una ruta fija dentro de
+      la carpeta del mod — ver FIX real de la sección 9 sobre por qué esto
+      importa (portales de OTRO mundo apareciendo en el mundo actual).
 - [ ] Confirmar acceso al `XUiManager` del jugador local y nombres de
       controles del sistema de binding V3.0 (`XUiPortalTag.cs`,
       `windows.xml`).
@@ -232,6 +274,26 @@ cada uno sigue sin probarse:
       de los valores `#@modfolder:...?prefab` o el formato de
       `AttachPrefabToEntity`/`RemovePrefabFromEntity` en `buffs.xml` le cae
       mal al parser específico del juego.
+
+### 10.2 Comportamientos conocidos inofensivos (log)
+
+- **"Unknown particle effect: 1566081755" (y variantes con otros IDs)** —
+  proviene de partículas internas rotas del propio AssetBundle
+  `gupFuturePortal6.unity3d` (no controladas por este mod ni por
+  `buffs.xml`/`PortalVisualFX.cs`; ver FIX real en `blocks.xml` sobre por
+  qué `portalBlockActive` dejó de usar ese modelo). No afecta el
+  rendimiento (112 FPS estable en pruebas de campo). **Se filtra
+  automáticamente del log** desde `LogFilterPatch.cs`, con un Harmony
+  Prefix sobre `Log.Error(string)` que descarta cualquier línea que
+  contenga "Unknown particle effect" ANTES de que se escriba a disco.
+  Se intentó primero con `Application.logMessageReceived` (lo pedido
+  originalmente) pero **no es posible por esa vía**: decompilando
+  `Log.Error`/`Log.masterLogStandalone` (`LogLibrary.dll`) contra el DLL
+  real se confirmó que en un build standalone (`Application.isEditor ==
+  false`, el caso real de cualquier partida) ese método escribe la línea
+  directo a disco y notifica sus propios listeners SIN pasar nunca por
+  `UnityEngine.Debug`/`Application.logMessageReceived` — ese evento nativo
+  de Unity simplemente nunca se dispara para este mensaje.
 
 ## 11. Pruebas de multijugador (si aplica)
 

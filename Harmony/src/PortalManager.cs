@@ -27,9 +27,9 @@ namespace PortalMod
     /// cualquier motivo esa carpeta no es accesible, el sistema sigue
     /// funcionando en memoria pero los portales SE PERDERAN al reiniciar el
     /// servidor.
-    /// TODO: verificar en Assembly-CSharp V3.0 si existe una API oficial tipo
-    /// "SaveGameManager" / "GameIO.GetSaveGameDir()" para atar este archivo al
-    /// mundo/slot de guardado correcto en vez de a una ruta fija junto al mod.
+    /// La API real para ubicar esa carpeta por mundo/slot de guardado
+    /// (confirmada por decompilacion, ver FIX real en GetSaveFilePath) es
+    /// GameIO.GetSaveGameDir().
     /// </summary>
     public class PortalManager
     {
@@ -71,6 +71,41 @@ namespace PortalMod
             SuccessOrphan,
             TagFull,
             EmptyTag
+        }
+
+        /// <summary>Resultado de verificar si hay un portalBlock real en una posicion — ver CheckPortalBlockAt.</summary>
+        private enum PortalBlockCheck
+        {
+            Present,
+            Missing,
+            Unknown
+        }
+
+        /// <summary>
+        /// Verifica si en el mundo REAL hay un portalBlock (o alguna de sus
+        /// variantes visuales, ver PortalBlockPatch.IsPortalBlock) en una
+        /// posicion dada. Usado unicamente por Load() para descartar entradas
+        /// obsoletas del archivo de persistencia (ver FIX real ahi).
+        ///
+        /// Devuelve "Unknown" (en vez de "Missing") si el chunk todavia no
+        /// esta cargado: World.GetBlock() decompilado contra el
+        /// Assembly-CSharp.dll real confirma que devuelve BlockValue.Air
+        /// tanto para "aire real" como para "chunk sin cargar" (ChunkCache
+        /// nulo) — sin distinguir ambos casos seria imposible diferenciar
+        /// "aqui no hay portal" de "todavia no se sabe", y validar a ciegas
+        /// borraria portales validos en chunks lejanos que el jugador aun no
+        /// visito al cargar el mundo. World.IsChunkAreaLoaded(x,y,z) (real,
+        /// confirmada por decompilacion) permite distinguir ambos casos.
+        /// </summary>
+        private static PortalBlockCheck CheckPortalBlockAt(World world, Vector3i pos)
+        {
+            if (world == null || !world.IsChunkAreaLoaded(pos.x, pos.y, pos.z))
+            {
+                return PortalBlockCheck.Unknown;
+            }
+
+            var blockValue = world.GetBlock(pos);
+            return PortalBlockPatch.IsPortalBlock(blockValue) ? PortalBlockCheck.Present : PortalBlockCheck.Missing;
         }
 
         public void Init()
@@ -330,13 +365,41 @@ namespace PortalMod
 
         private static string GetSaveFilePath()
         {
-            // TODO: verificar en Assembly-CSharp V3.0 la forma correcta de obtener
-            // la carpeta de guardado del mundo activo (candidatos conocidos en
-            // builds anteriores: GameIO.GetSaveGameDir(), GameUtils.GetSaveGameDir(),
-            // GameManager.Instance.World.ChunkCache.ChunkCluster...). Mientras tanto
-            // se persiste junto al mod para no depender de esa API.
-            var baseDir = API.ModInstance != null ? API.ModInstance.Path : Path.GetTempPath();
-            var saveDir = Path.Combine(baseDir, "SaveData");
+            // FIX real (portales apareciendo en posiciones random/flotando al
+            // cargar un mundo): el archivo se guardaba en una ruta FIJA dentro
+            // de la carpeta del MOD (misma ruta sin importar el mundo/slot de
+            // guardado activo). Con eso, cargar un mundo B despues de haber
+            // jugado un mundo A restauraba los portales de A sobre las
+            // coordenadas de B — terreno generado distinto, mismas
+            // coordenadas, portal "flotando en el aire" o dentro de un cerro.
+            //
+            // La API real de guardado por mundo, confirmada decompilando
+            // GameIO contra el Assembly-CSharp.dll real: GetSaveGameDir()
+            // (estatico, sin argumentos) resuelve internamente
+            // GetSaveGameDir(GamePrefs.GetString(EnumGamePrefs.GameWorld),
+            // GamePrefs.GetString(EnumGamePrefs.GameName),
+            // (UserDataStorageType)GamePrefs.GetInt(EnumGamePrefs.GameSaveStorageType))
+            // — es decir, la carpeta REAL del slot de guardado activo. Se usa
+            // esa carpeta ahora; el fallback junto al mod solo aplica si
+            // GameIO todavia no tiene un mundo activo resuelto (por ejemplo
+            // si algo llamara a esto antes de tiempo).
+            string saveDir;
+            try
+            {
+                saveDir = GameIO.GetSaveGameDir();
+            }
+            catch (Exception e)
+            {
+                saveDir = null;
+                API.LogWarning($"GameIO.GetSaveGameDir() fallo ({e.Message}), usando fallback junto al mod.");
+            }
+
+            if (string.IsNullOrEmpty(saveDir))
+            {
+                var baseDir = API.ModInstance != null ? API.ModInstance.Path : Path.GetTempPath();
+                saveDir = Path.Combine(baseDir, "SaveData");
+            }
+
             Directory.CreateDirectory(saveDir);
             return Path.Combine(saveDir, "portals.dat");
         }
@@ -388,10 +451,16 @@ namespace PortalMod
                 return;
             }
 
+            // Usado para validar cada posicion cargada contra el mundo real
+            // antes de registrarla (ver FIX real mas abajo).
+            var world = GameManager.Instance != null ? GameManager.Instance.World : null;
+
             try
             {
                 _portals.Clear();
                 _positionLookup.Clear();
+
+                var discardedCount = 0;
 
                 foreach (var rawLine in File.ReadAllLines(path, Encoding.UTF8))
                 {
@@ -424,8 +493,42 @@ namespace PortalMod
                             int.Parse(coords[1], CultureInfo.InvariantCulture),
                             int.Parse(coords[2], CultureInfo.InvariantCulture));
 
+                        // FIX real (portales apareciendo en posiciones random al
+                        // cargar, incluso flotando en el aire): antes de
+                        // registrar una posicion guardada, verificar que en el
+                        // mundo REAL exista un portalBlock (o alguna de sus
+                        // variantes visuales) ahi. Entradas obsoletas -que ya
+                        // no correspondian a un bloque real, por ejemplo por
+                        // venir de otro mundo antes del FIX de
+                        // GetSaveFilePath() de arriba, o por haberse destruido
+                        // el bloque sin pasar por
+                        // Block_OnBlockDestroyedBy_Patch (explosion, comando de
+                        // consola, terreno regenerado)- se descartan en vez de
+                        // registrarse.
+                        var check = CheckPortalBlockAt(world, pos);
+                        var existsLabel = check == PortalBlockCheck.Missing
+                            ? "false"
+                            : check == PortalBlockCheck.Present
+                                ? "true"
+                                : "true (chunk no cargado, sin confirmar)";
+                        API.Log($"[PortalMod] Validando portal cargado en pos {pos} - bloque existe: {existsLabel}");
+
+                        if (check == PortalBlockCheck.Missing)
+                        {
+                            discardedCount++;
+                            _dirty = true;
+                            continue;
+                        }
+
                         positions.Add(pos);
                         _positionLookup[pos] = new PortalRef(steamId, tag);
+                    }
+
+                    if (positions.Count == 0)
+                    {
+                        // Todas las posiciones de este tag resultaron invalidas:
+                        // no dejar una entrada vacia en _portals.
+                        continue;
                     }
 
                     if (!_portals.TryGetValue(steamId, out var tagMap))
@@ -437,7 +540,7 @@ namespace PortalMod
                     tagMap[tag] = positions;
                 }
 
-                API.Log($"Portales cargados desde disco ({_positionLookup.Count} en total).");
+                API.Log($"Portales cargados desde disco ({_positionLookup.Count} en total, {discardedCount} descartados por no tener bloque real).");
             }
             catch (Exception e)
             {

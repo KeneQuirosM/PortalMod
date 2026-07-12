@@ -79,9 +79,29 @@
           reemplazo, igual que con ParticleOnDestroy arriba.
       -->
 
-      <!-- Resistencia -->
-      <property name="Health" value="4000" />
-      <property name="HitMaskAll" value="0" />
+      <!--
+          FIX real (el portal no se podia romper): "Health"/"HitMaskAll" NUNCA
+          existieron como propiedades de bloque en V3.0 — confirmado con
+          grep contra TODO Data/Config/blocks.xml vanilla instalado (0
+          coincidencias de ninguna de las dos como property de bloque) y
+          decompilando la clase Block contra el Assembly-CSharp.dll real (sus
+          campos son MaxDamage/StartDamage/Stage2Health, ninguno llamado
+          "Health" ni "HitMaskAll"). Mismo patron que el fiasco anterior de
+          LightColor/LightIntensity/LightRadius: dos propiedades fantasma,
+          sin efecto, silenciosamente ignoradas por el loader. Al no tener
+          nunca un "MaxDamage" real configurado, el bloque quedaba con el
+          valor por defecto del motor y se sentia indestructible.
+
+          La propiedad real (campo "MaxDamage", int, 327 usos reales en el
+          blocks.xml vanilla) es la resistencia real del bloque en puntos de
+          "dano acumulado hasta destruirse". Valores vanilla de referencia:
+          ~30 en madera, ~1500 en puertas/decoracion, 5000-7000 en
+          concreto/acero de nivel alto. Se usa 2000, comparable al material
+          de nivel scrap/metal (corrugatedMetal*, mismo Material="Mmetal" y
+          mismo drop scrapIron que este bloque) — rompible con herramientas
+          normales (pico, taladro) en un tiempo razonable, sin ser trivial.
+      -->
+      <property name="MaxDamage" value="2000" />
 
       <!--
           ESTADOS VISUALES (inactivo / activo / pulso):

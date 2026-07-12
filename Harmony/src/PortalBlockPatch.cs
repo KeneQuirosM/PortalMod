@@ -37,8 +37,18 @@ namespace PortalMod
                 return false;
             }
 
+            // FIX real (encontrado al implementar la validacion de portales
+            // al cargar el mundo, ver PortalManager.Load): faltaba
+            // "portalBlockActivePulseHigh" aqui. PortalVisualFX.AmbientTick
+            // alterna el BlockValue de un portal vinculado entre
+            // "portalBlockActive" y "portalBlockActivePulseHigh" cada ~0.6s
+            // (ver blocks.xml) - sin este tercer nombre, CUALQUIER patch que
+            // dependa de IsPortalBlock (activacion con tecla E, destruccion,
+            // y ahora la validacion de carga) fallaba en silencio la mitad
+            // del tiempo, justo cuando el bloque estaba en la fase "alta"
+            // del pulso.
             var name = block.GetBlockName();
-            return name == "portalBlock" || name == "portalBlockActive";
+            return name == "portalBlock" || name == "portalBlockActive" || name == "portalBlockActivePulseHigh";
         }
     }
 
