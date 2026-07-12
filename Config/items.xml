@@ -68,13 +68,22 @@
 
       <!--
           Icono de inventario (2D): guppyFuturePortal6, sin extension (asi lo
-          lee 7D2D — el resolvedor de iconos busca el .png dentro de
-          Resources/ItemIcons/ por nombre). Sintaxis "CustomIcon"/
-          "CustomIconTint" confirmada identica contra items.xml vanilla (no
-          existe "IconAtlas"/"CustomIconAtlas" en ningun item vanilla). El
-          .png correspondiente ya existe en Resources/ItemIcons/
-          guppyFuturePortal6.png — el icono no aparecia simplemente porque
-          este item nunca llegaba a cargar (ver FIX real arriba).
+          lee 7D2D — el resolvedor de iconos busca el nombre de sprite entre
+          TODOS los atlas de mod cargados por nombre de archivo, sin
+          extension). Sintaxis "CustomIcon"/"CustomIconTint" confirmada
+          identica contra items.xml vanilla (no existe "IconAtlas"/
+          "CustomIconAtlas" en ningun item vanilla).
+
+          FIX real (el icono nunca aparecia en el inventario, incluso ya con
+          este item cargando bien): el .png vivia en "Resources/ItemIcons/",
+          una carpeta que el juego JAMAS escanea para esto. Decompilando
+          ModManager y UIAtlasFromFolder.CreateUiAtlasFromFolder contra el
+          Assembly-CSharp.dll real se confirmo que la ruta real es
+          "<CarpetaDelMod>/UIAtlases/<CualquierSubcarpeta>/" — cada
+          subcarpeta ahi se carga como un atlas nuevo, tomando cada archivo
+          .png/.jpg/.tga como un sprite (nombre = nombre de archivo sin
+          extension). El .png ya se movio a
+          "UIAtlases/ItemIconAtlas/guppyFuturePortal6.png".
       -->
       <property name="CustomIcon" value="guppyFuturePortal6" />
       <property name="CustomIconTint" value="ffffffff" />

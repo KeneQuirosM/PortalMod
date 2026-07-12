@@ -42,6 +42,11 @@ namespace PortalMod
             // conocidos (auto-throttleado internamente, ver PortalVisualFX).
             PortalVisualFX.AmbientTick();
 
+            // Tooltip + texto flotante al apuntar a un portal con la mira
+            // (auto-throttleado internamente, ver PortalHoverFX). Solo afecta
+            // al jugador local de este cliente, no a la lista de jugadores.
+            PortalHoverFX.Tick(world);
+
             // TODO: verificar en Assembly-CSharp V3.0 el metodo correcto para
             // enumerar jugadores activos en el server/host. Candidatos conocidos
             // en builds anteriores: World.Players.list, World.GetPlayers(),

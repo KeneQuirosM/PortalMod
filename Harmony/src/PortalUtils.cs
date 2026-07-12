@@ -93,5 +93,11 @@ namespace PortalMod
         {
             ShowMessage(player, Localization.Get("portalHudCooldown"));
         }
+
+        /// <summary>Tooltip mostrado al apuntar (hover) a un portal — ver PortalHoverFX.</summary>
+        public static void ShowTargetMessage(EntityPlayer player, string tag, bool linked)
+        {
+            ShowMessage(player, string.Format(Localization.Get(linked ? "portalHudTargetLinked" : "portalHudTargetOrphan"), tag));
+        }
     }
 }

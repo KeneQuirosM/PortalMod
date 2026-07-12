@@ -152,28 +152,56 @@ PortalMod/
 │       ├── PortalTeleport.cs   Deteccion de colision y teletransporte
 │       ├── PortalBlockPatch.cs Harmony patches (colocar/activar/destruir)
 │       ├── PortalVisualFX.cs   Luz/particulas por estado + rafagas de teletransporte
+│       ├── PortalHoverFX.cs    Tooltip + texto flotante al apuntar a un portal (mira)
 │       ├── XUiPortalTag.cs     Controller de la ventana de nombre de tag
 │       └── PortalUtils.cs      Helpers compartidos (identidad de jugador, HUD)
-└── Resources/
-    ├── gupFuturePortal1.unity3d   Modelo 3D: portalBlock estado INACTIVO
-    ├── gupFuturePortal6.unity3d   Modelo 3D: portalBlock estado ACTIVO
-    ├── gupFuturePortal4.unity3d   Efecto de particulas: teletransporte
-    ├── gupPortKeyCard.unity3d     Modelo 3D: portalBlockItem (mesh en mano)
-    ├── gupKeyCardSound.unity3d    Sonido: activacion del portal
-    ├── gupTeleportRide.unity3d    Efecto de particulas: viaje (loop del buff)
-    └── ItemIcons/
+├── Resources/
+│   ├── gupFuturePortal1.unity3d   Modelo 3D: portalBlock (inactivo Y activo, ver blocks.xml)
+│   ├── gupFuturePortal6.unity3d   Sin usar como Model (particulas internas rotas, ver blocks.xml)
+│   ├── gupFuturePortal4.unity3d   Efecto de particulas: teletransporte
+│   ├── gupPortKeyCard.unity3d     Modelo 3D: portalBlockItem (mesh en mano)
+│   ├── gupKeyCardSound.unity3d    Sonido: activacion del portal
+│   └── gupTeleportRide.unity3d    Efecto de particulas: viaje (loop del buff)
+└── UIAtlases/
+    └── ItemIconAtlas/
         ├── guppyFuturePortal6.png Icono de inventario: portalBlockItem
         └── gupPortKeyCard.png     Icono reservado (sin item asociado aun)
 ```
 
-**Nota sobre `Resources/`**: los bundles `.unity3d` y los `.png` de
-`ItemIcons/` deben subirse manualmente al repositorio junto al resto del mod
-— no se generan ni se validan desde este proyecto C#. Los nombres de
-prefab/clip DENTRO de cada bundle (usados en los atributos
-`#@modfolder:...?NombrePrefab` de `blocks.xml`/`items.xml`/`buffs.xml`) ya
-están confirmados contra el XML original del mod de assets (SCore) — ver
-`TESTING.md` sección 10 para el detalle de cada uno — pero siguen sin
-probarse contra el juego real.
+**Nota sobre `Resources/`**: los bundles `.unity3d` deben subirse
+manualmente al repositorio junto al resto del mod — no se generan ni se
+validan desde este proyecto C#. Los nombres de prefab/clip DENTRO de cada
+bundle (usados en los atributos `#@modfolder:...?NombrePrefab` de
+`blocks.xml`/`items.xml`/`buffs.xml`) ya están confirmados contra el XML
+original del mod de assets (SCore) — ver `TESTING.md` sección 10 para el
+detalle de cada uno — pero siguen sin probarse contra el juego real.
+
+**Nota sobre `UIAtlases/`**: esta es la ruta REAL donde el juego busca
+iconos custom de mod — confirmado decompilando ModManager y
+UIAtlasFromFolder.CreateUiAtlasFromFolder contra el Assembly-CSharp.dll
+real: cada subcarpeta dentro de `<CarpetaDelMod>/UIAtlases/` se carga como
+un atlas nuevo, tomando cada `.png`/`.jpg`/`.tga` de esa subcarpeta como un
+sprite (nombre del sprite = nombre de archivo sin extension). `Resources/
+ItemIcons/` (la ubicacion original de estos mismos archivos) NUNCA fue
+escaneada por el juego para esto — los iconos nunca se veian en el
+inventario.
+
+**Nota sobre `PortalHoverFX.cs`**: identificacion visual del destino del
+portal (tag) al apuntarle con la mira. El tooltip HUD reutiliza
+`GameManager.ShowTooltip` (ya usado por `PortalHud`). El texto flotante
+sobre el bloque reutiliza `DamageText.Create(string, Color, Vector3
+worldPos, Vector3 velocity, float scale)` — confirmado decompilando
+`EntityAlive.DamageEntity` contra el Assembly-CSharp.dll real: es el mismo
+metodo que el juego usa para los numeros de daño flotantes, publico y
+generico para cualquier string. Se prefirio sobre el sistema de
+carteles/`TileEntitySign` (mucho mas pesado: textura horneada por bloque)
+porque no existe una API de "texto flotante generico" mas simple expuesta
+(se buscaron por reflection tipos `FloatingText`/`WorldText`/`NameTag`/
+`Nameplate`: ninguno existe en V3.0). Limitacion conocida: `DamageText.Create`
+instancia su GameObject localmente (`Resources.Load`+`Object.Instantiate`,
+sin replicacion de red) y depende de `Camera.main`, por lo que
+`PortalHoverFX` corre unicamente sobre el jugador local de cada cliente
+(`World.GetPrimaryPlayer()`) y nunca en `GameManager.IsDedicatedServer`.
 
 ## Limitaciones conocidas / TODOs
 

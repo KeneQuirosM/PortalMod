@@ -13,6 +13,8 @@ portalHudRenamed,xui,Windows,,,Portal renamed to '{0}',Portal renombrado a '{0}'
 portalHudCooldown,xui,Windows,,,Portal on cooldown — wait a moment before traveling again,Portal en enfriamiento — espera un momento antes de viajar de nuevo,
 portalHudEmptyTag,xui,Windows,,,Tag cannot be empty,El tag no puede estar vacio,
 portalHudDestinationMissing,xui,Windows,,,Destination not found — place another portal with tag '{0}',Destino no encontrado — coloca otro portal con tag '{0}',
+portalHudTargetLinked,xui,Windows,,,Portal: '{0}',Portal: '{0}',
+portalHudTargetOrphan,xui,Windows,,,Portal: '{0}' (no destination yet),Portal: '{0}' (sin destino aun),
 xuiPortalTagTitle,xui,Windows,,,Name Portal,Nombrar Portal,
 xuiPortalTagPlaceholder,xui,Windows,,,Enter portal tag...,Ingresa el tag del portal...,
 xuiPortalTagConfirm,xui,Windows,,,Confirm,Confirmar,
