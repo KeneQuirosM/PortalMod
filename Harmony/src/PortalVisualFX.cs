@@ -55,6 +55,26 @@ namespace PortalMod
     /// electrico real son mutuamente incompatibles en V3.0 tal como esta
     /// implementado el sistema de energia (grafo de PowerItem atado al
     /// TileEntity de una posicion/BlockValue especifica).
+    ///
+    /// INVESTIGACION ADICIONAL (pedido: suscribirse a un evento de cambio de
+    /// energia de TileEntityPowered para refrescar el visual): se buscaron
+    /// por reflection TODOS los eventos C# (`event`) declarados en
+    /// TileEntityPowered, TileEntity y PowerItem contra el
+    /// Assembly-CSharp.dll real. El UNICO evento real que existe es
+    /// "Destroyed" (tipo XUiEvent_TileEntityDestroyed, se dispara al
+    /// destruirse el TileEntity, no al cambiar su energia) — NO existe
+    /// ningun evento/callback de "cambio de estado de energia". Decompilando
+    /// PowerManager.Update() se confirmo que el grafo de energia se
+    /// RECALCULA por POLLING cada 0.16s (no por eventos), y
+    /// TileEntityPoweredBlock.ClientUpdate() replica ese estado a los
+    /// clientes — el mismo patron de polling que ya usa este archivo (leer
+    /// PortalPower.HasNearbyPower en cada ambient tick, cada 0.6s, para
+    /// decidir la particula). Aun si hubiera un evento, conectarlo a un
+    /// swap de BlockValue reintroduciria EXACTAMENTE el mismo problema
+    /// descripto arriba (el propio swap desconectaria el cable que acaba de
+    /// energizarse) — el problema no es "polling vs evento", es que
+    /// cualquier cambio de BlockValue corta el cable, sea como sea que se
+    /// detecte el cambio de energia.
     /// </summary>
     internal static class PortalVisualFX
     {
@@ -83,6 +103,13 @@ namespace PortalMod
         /// </summary>
         internal static void RefreshBlockState(Vector3i pos, bool linked)
         {
+            // Diagnostico ("el portal se ve apagado aunque tenga energia"):
+            // este es el UNICO lugar donde el modelo del portal cambia (ver
+            // FIX real de la clase). Si el log de aqui no aparece al
+            // vincular un par, el bug no es de energia sino de que
+            // RegisterPortal nunca llego a llamar esto.
+            API.Log($"[PortalMod] RefreshBlockState pos={pos} linked={linked}");
+
             if (linked)
             {
                 var biome = PortalManager.Instance.GetBiome(pos);
@@ -118,7 +145,12 @@ namespace PortalMod
             var targetBlock = Block.GetBlockByName(targetName);
             if (targetBlock == null)
             {
-                API.LogWarning($"No se encontro el bloque '{targetName}' (revisa Config/blocks.xml).");
+                // Diagnostico ("el portal se ve apagado aunque tenga
+                // energia"): si esto aparece en el log, el bug real es que
+                // el bloque de la variante ("targetName") no existe/no
+                // cargo — revisar blocks.xml (typo de nombre, o el mod no
+                // termino de cargar esta variante).
+                API.LogWarning($"[PortalMod] SetBlockState: no se encontro el bloque '{targetName}' (revisa Config/blocks.xml) — el portal en {pos} se quedara con su modelo actual.");
                 return;
             }
 
@@ -126,8 +158,11 @@ namespace PortalMod
             // leer el bloque actual en una posicion. Candidato de builds
             // anteriores: World.GetBlock(Vector3i).
             var currentBv = world.GetBlock(pos);
+            API.Log($"[PortalMod] SetBlockState pos={pos} bloqueActual={currentBv.Block?.GetBlockName()} bloqueObjetivo={targetName}");
             if (currentBv.Block == targetBlock)
             {
+                // Ya esta en el bloque correcto — no hace falta swap (y no
+                // se toca el cable/TileEntity, ver FIX real de la clase).
                 return;
             }
 

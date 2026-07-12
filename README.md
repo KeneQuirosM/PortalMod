@@ -99,10 +99,11 @@ cp Harmony/PortalMod.csproj.template Harmony/PortalMod.csproj
 9. Al salir de un portal se aplica brevemente el buff `buffPortalTravel`
    (2 segundos), que congela el movimiento y dispara un efecto de
    partículas/sonido de llegada.
-10. El **color y modelo** de un portal vinculado dependen del **bioma** donde
-    lo colocaste (nieve, yermo/wasteland, bosque quemado, bosque de pinos,
-    desierto — cualquier otro bioma usa el modelo/color "default"). Se
-    detecta y se aplica una sola vez al vincularse el par y no cambia
+10. El **color** de un portal vinculado depende del **bioma** donde lo
+    colocaste (nieve, yermo/wasteland, bosque quemado, bosque de pinos,
+    desierto — cualquier otro bioma usa el color "default"). El modelo 3D
+    ("con alas") es el mismo para todos los biomas; solo cambia el tinte.
+    Se detecta y se aplica una sola vez al vincularse el par y no cambia
     después (ni siquiera si pierde la energía — ver punto 11).
 11. Un portal vinculado **necesita estar cableado a una fuente de energía
     encendida** (generador, panel solar, banco de baterías) para
@@ -197,12 +198,12 @@ PortalMod/
 │       ├── XUiPortalTag.cs     Controller de la ventana de nombre de tag
 │       └── PortalUtils.cs      Helpers compartidos (identidad de jugador, HUD)
 ├── Resources/
-│   ├── gupFuturePortal1.unity3d   Modelo 3D: portalBlock / variante bioma pine_forest
-│   ├── gupFuturePortal2.unity3d   Modelo 3D: variante bioma snow
-│   ├── gupFuturePortal3.unity3d   Modelo 3D: variante bioma wasteland
-│   ├── gupFuturePortal5.unity3d   Modelo 3D: variante bioma desert
-│   ├── gupFuturePortal6.unity3d   Modelo 3D: portalBlockActive (default/ciudad, ver blocks.xml)
-│   ├── gupFuturePortal4.unity3d   Efecto de particulas: teletransporte; tambien variante bioma burnt_forest (uso como Model sin confirmar, ver blocks.xml)
+│   ├── gupFuturePortal1.unity3d   Modelo 3D: portalBlock (estado inactivo, unico uso actual)
+│   ├── gupFuturePortal5.unity3d   Modelo 3D: portalBlockActive y TODAS las variantes de bioma ("con alas", ver blocks.xml)
+│   ├── gupFuturePortal2.unity3d   Sin usar como Model (antes variante bioma snow, unificado a gupFuturePortal5)
+│   ├── gupFuturePortal3.unity3d   Sin usar como Model (antes variante bioma wasteland, unificado a gupFuturePortal5)
+│   ├── gupFuturePortal6.unity3d   Sin usar como Model (antes variante default, unificado a gupFuturePortal5)
+│   ├── gupFuturePortal4.unity3d   Efecto de particulas: teletransporte (antes tambien variante burnt_forest, unificado a gupFuturePortal5)
 │   ├── gupPortKeyCard.unity3d     Modelo 3D: portalBlockItem (mesh en mano)
 │   ├── gupKeyCardSound.unity3d    Sonido: activacion del portal
 │   └── gupTeleportRide.unity3d    Efecto de particulas: viaje (loop del buff)

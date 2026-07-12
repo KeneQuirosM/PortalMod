@@ -52,7 +52,8 @@ está pendiente de verificación real**.
 ## 5. Pruebas de vinculación
 
 - [ ] Colocar dos portales con el mismo tag los vincula.
-- [ ] El modelo cambia a `gupFuturePortal6` (activo) al vincularse.
+- [ ] El modelo cambia a `gupFuturePortal5` (activo, con alas — mismo modelo
+      para todos los biomas, ver sección 9.2) al vincularse.
 - [ ] En el HUD aparece "Portal activo — conectado a '{tag}'".
 - [ ] Colocar un tercer portal con un tag ya usado (2/2) muestra error en
       HUD ("Tag en uso — ya existen 2 portales con ese nombre") y no se
@@ -110,6 +111,32 @@ TileEntity, no busca nada por radio.
       "sin energía" es el mensaje HUD al intentar usarlo. Esto es un cambio
       respecto a la primera versión de esta Feature (que sí cambiaba el
       modelo), necesario para que el cableado real pueda mantenerse estable.
+
+**Diagnóstico "el portal se ve apagado aunque tenga energía"**: se
+investigó si `TileEntityPowered` expone algún evento/callback de cambio de
+energía para refrescar el visual en vivo — **no existe ninguno**
+(confirmado por reflection contra el Assembly-CSharp.dll real: el único
+evento de `TileEntityPowered`/`TileEntity`/`PowerItem` es `Destroyed`, no
+relacionado con energía; el grid de energía se recalcula por POLLING cada
+0.16s en `PowerManager.Update()`, sin eventos). Aunque existiera, conectar
+un swap de `BlockValue` a un cambio de energía reintroduciría el bug ya
+descripto arriba (el propio swap desconecta el cable). Se agregaron logs
+de diagnóstico para encontrar la causa REAL de "se ve apagado":
+
+- [ ] `[PortalMod] Portal en pos X,Y,Z - IsPowered: true/false` (o
+      `TileEntityPowered no encontrado`) en `PortalPower.HasNearbyPower` —
+      confirma si el TileEntity eléctrico existe y su estado real.
+- [ ] `[PortalMod] RefreshBlockState pos=... linked=True/False` en
+      `PortalVisualFX` — confirma si el swap de modelo se INTENTÓ al
+      vincular el par. Si este log nunca aparece al vincular, el bug real
+      no es de energía sino de que `RegisterPortal` no llegó a completar el
+      par (revisar el log `Portal registrado: ... (par actual: X/2)`).
+- [ ] `[PortalMod] SetBlockState pos=... bloqueActual=... bloqueObjetivo=...`
+      — si `bloqueObjetivo` ya coincide con `bloqueActual`, es esperado que
+      no haya swap (ya estaba correcto). Si aparece un
+      `[PortalMod] SetBlockState: no se encontro el bloque '...'`
+      (warning), el bug real es que esa variante de blocks.xml no
+      existe/no cargó (revisar el nombre exacto contra `blocks.xml`).
 
 ## 7. Pruebas de sala de portales
 
@@ -171,28 +198,38 @@ TileEntity, no busca nada por radio.
 
 ## 9.2 Pruebas de color/modelo por bioma (Feature "color y modelo por bioma")
 
-- [ ] Colocar y vincular un par de portales en cada bioma listado (nieve,
-      yermo/wasteland, bosque quemado, bosque de pinos, desierto) muestra el
-      modelo y color correspondiente en cuanto el par queda **vinculado**
-      (ya NO depende de tener energía — ver sección 6.1 sobre por qué el
-      modelo/color se separó del estado de energía) — revisar el log en
-      `RegisterPortal`: `[PortalMod] Bioma detectado para portal en X,Y,Z:
-      <nombre>`.
-- [ ] Un portal colocado en un bioma sin mapeo específico (o donde el bioma
-      no se pudo resolver) usa el modelo/color "default" (morado,
-      `gupFuturePortal6`) — el mismo que se usaba antes de esta Feature.
+**Modelo unificado**: todas las variantes vinculadas (default + 5 biomas)
+usan el mismo modelo `gupFuturePortal5.unity3d?guppyFuturePortal5.prefab`
+("con alas") — solo cambia `TintColor`. El estado inactivo (sin par o sin
+energía) sigue usando `gupFuturePortal1` con su tinte gris-azulado neutro.
+
+- [ ] Colocar y vincular un par de portales en cada bioma listado muestra el
+      modelo `gupFuturePortal5` con el color correspondiente en cuanto el
+      par queda **vinculado** (ya NO depende de tener energía — ver sección
+      6.1) — revisar el log en `RegisterPortal`: `[PortalMod] Bioma
+      detectado para portal en X,Y,Z: <nombre>`, y en `PortalVisualFX`:
+      `[PortalMod] RefreshBlockState pos=... linked=True` seguido de
+      `[PortalMod] SetBlockState pos=... bloqueActual=... bloqueObjetivo=...`.
+      - nieve (`snow`): azul frío — `TintColor="3380FF"`.
+      - yermo (`wasteland`): amarillo/dorado — `TintColor="FFCC1A"`.
+      - bosque quemado (`burnt_forest`): naranja — `TintColor="FF6600"`.
+      - bosque de pinos (`pine_forest`): verde — `TintColor="33FF33"`.
+      - desierto (`desert`): naranja arena — `TintColor="FF991A"`.
+      - default/sin mapeo (`underwater`, cualquier otro): morado —
+        `TintColor="8033FF"`.
 - [ ] El bioma detectado persiste correctamente al recargar el mundo (mismo
       modelo/color después de un reinicio, sin necesidad de re-vincular).
 - [ ] **Pendiente de confirmar en el juego real** (ver TODO en
-      `blocks.xml`): los prefabs dentro de `gupFuturePortal2/3/5.unity3d`
-      (nieve/yermo/desierto) — se asumió el mismo patrón de nombre que
-      `gupFuturePortal1/4/6.unity3d` (`guppyFuturePortalN.prefab`), sin
-      confirmar contra el XML original del mod de assets. Si el modelo no
-      carga, revisar el nombre real del prefab dentro del bundle.
-- [ ] **Pendiente de confirmar**: `gupFuturePortal4.unity3d` (usado también
-      como prefab de partícula en `buffs.xml`) funcionando como `Model` de
-      bloque completo (`Shape="ModelEntity"`) para la variante
-      `burnt_forest` — si no carga, es la variante más probable de fallar.
+      `blocks.xml`): el nombre de prefab dentro de `gupFuturePortal5.unity3d`
+      — se asumió el mismo patrón que `gupFuturePortal1/4/6.unity3d`
+      (`guppyFuturePortalN.prefab`), sin confirmar contra el XML original
+      del mod de assets. Como TODAS las variantes vinculadas comparten este
+      modelo, si el nombre está mal NINGÚN portal vinculado se vería
+      correctamente (revisar el log de advertencia `SetBlockState: no se
+      encontro el bloque` si esto pasa — aunque ese warning es sobre el
+      NOMBRE DE BLOQUE de blocks.xml, no sobre el prefab en sí; si el bloque
+      se encuentra pero el modelo 3D no carga, el warning no aparecería y
+      habría que revisar el log de carga de assets del juego).
 
 ## 10. Pruebas de TODOs pendientes
 

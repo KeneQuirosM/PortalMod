@@ -37,7 +37,23 @@ namespace PortalMod
                 return false;
             }
 
-            return world.GetTileEntity(pos) is TileEntityPowered tileEntityPowered && tileEntityPowered.IsPowered;
+            var tileEntity = world.GetTileEntity(pos) as TileEntityPowered;
+
+            // Diagnostico pedido explicitamente para investigar "el portal se
+            // ve apagado aunque tenga energia": loguea el TileEntity real
+            // encontrado (o su ausencia) y el IsPowered resultante en cada
+            // chequeo. Es intencionalmente verboso (corre en cada ambient
+            // tick por portal, ~cada 0.6s, y en cada intento de
+            // teletransporte) — quitar o bajar de nivel una vez diagnosticado
+            // el problema real.
+            if (tileEntity == null)
+            {
+                API.Log($"[PortalMod] Portal en pos {pos} - TileEntityPowered no encontrado (world.GetTileEntity devolvio null o un tipo distinto).");
+                return false;
+            }
+
+            API.Log($"[PortalMod] Portal en pos {pos} - IsPowered: {tileEntity.IsPowered}");
+            return tileEntity.IsPowered;
         }
     }
 }
