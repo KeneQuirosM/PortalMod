@@ -181,6 +181,30 @@ namespace PortalMod
     /// (por jugador, por portal) para no perder trabajo de mas de lo
     /// necesario; este es solo la red de seguridad final para que, pase lo
     /// que pase, GameManager.Update() nunca vea una excepcion salir de este mod.
+    ///
+    /// Feature "portales por party" — DESVIACION DE DISENO deliberada: se
+    /// pidio "suscribirse al evento de unirse/salir de party" en API.cs
+    /// (PlayerJoinedParty / OnPartyChanged / PartyManager o similar). No se
+    /// pudo confirmar contra Assembly-CSharp.dll real que exista tal
+    /// sistema de party, y mucho menos el nombre/firma de un evento
+    /// concreto para el — a diferencia de un mal calculo de firma en un
+    /// Harmony patch (que falla en RUNTIME con un mensaje claro, ya visto
+    /// varias veces en este mod), referenciar directamente un tipo/evento
+    /// inexistente en C# (ej. "PartyManager.OnPartyChanged += ...") es un
+    /// error de COMPILACION duro que tumbaria TODO el mod. Se opto por el
+    /// mismo patron ya establecido en este archivo (polling sobre
+    /// GameManager.Update en vez de ModEvents.GameShutdown/GameUpdate,
+    /// ver comentario en InitMod): PortalTeleport.Tick(), que ya corre cada
+    /// frame desde este mismo Postfix, llama
+    /// PortalManager.Instance.CheckPartyMembershipChanged(player) para cada
+    /// jugador (ver PortalTeleport.CheckPlayerPortalCollision) — ese metodo
+    /// detecta el cambio de GetPortalKey(player) comparando contra el
+    /// ultimo valor conocido y dispara la migracion (MigratePortals)
+    /// exactamente igual que lo haria un handler de evento JOIN/LEAVE, solo
+    /// que revisado por polling en vez de push. Si en el futuro se
+    /// confirma que si existe un evento real de party, reemplazar ese
+    /// polling por una suscripcion directa seria estrictamente mejor
+    /// (menos overhead) pero no es necesario para la correctitud.
     /// </summary>
     [HarmonyPatch(typeof(GameManager), "Update")]
     internal static class GameManager_Update_Patch

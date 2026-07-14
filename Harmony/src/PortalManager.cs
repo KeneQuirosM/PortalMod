@@ -9,15 +9,23 @@ namespace PortalMod
 {
     /// <summary>
     /// Nucleo del sistema de portales estilo Valheim: vinculacion bidireccional
-    /// por tag compartida, sin jerarquia madre/hijo. Cada jugador (identificado
-    /// por "steamId" — en realidad EntityPlayer.entityId.ToString(), ver
-    /// PortalIdentity.GetSteamId en PortalUtils.cs; NO es estable entre
-    /// sesiones, ver TODO ahi) gestiona su propio set de portales de forma
-    /// totalmente independiente al de los demas jugadores, lo que hace que el
-    /// sistema funcione correctamente en multijugador.
+    /// por tag compartida, sin jerarquia madre/hijo.
+    ///
+    /// Feature "portales por party": los portales se registran bajo un
+    /// "ownerKey" — el steamId personal del jugador (en realidad
+    /// EntityPlayer.entityId.ToString(), ver PortalIdentity.GetSteamId en
+    /// PortalUtils.cs; NO es estable entre sesiones, ver TODO ahi) si no
+    /// esta en ninguna party, o el ID de su party (prefijo "party:") si lo
+    /// esta — ver GetPortalKey. Los jugadores de la MISMA party comparten
+    /// TODOS sus portales entre si; los de partys distintas (o sin party)
+    /// no pueden usar los del otro. Ver PortalParty.cs sobre como se
+    /// resuelve la party de un jugador (sin confirmar contra el DLL real,
+    /// ver TODO CRITICO ahi) y MigratePortals/CheckPartyMembershipChanged
+    /// mas abajo sobre que pasa cuando un jugador entra/sale de una party
+    /// con portales ya colocados.
     ///
     /// Estructura de datos principal:
-    ///   steamId -> tag -> lista de posiciones (maximo 2 elementos == un par).
+    ///   ownerKey -> tag -> lista de posiciones (maximo 2 elementos == un par).
     ///
     /// PERSISTENCIA: 7 Days to Die V3.0 no expone (hasta donde se ha podido
     /// confirmar) un hook oficial de guardado de datos custom por mundo para
@@ -76,21 +84,53 @@ namespace PortalMod
             new Dictionary<Vector3i, string>();
 
         // steamId -> timestamp (Time.time) en el que termina el cooldown de 5s.
+        // OJO: el cooldown SIEMPRE es por steamId individual, nunca por party
+        // (ver GetPortalKey) — es una proteccion contra loops de
+        // teletransporte de UN jugador fisico, no una propiedad del portal
+        // ni de su dueño.
         private readonly Dictionary<string, float> _cooldowns = new Dictionary<string, float>();
+
+        // Feature "portales por party": posicion -> steamId de quien coloco
+        // FISICAMENTE ese portal (independiente de bajo que ownerKey este
+        // registrado ahora mismo). Se usa en MigratePortals para que "salir
+        // de la party" solo devuelva al jugador SUS PROPIOS portales, no los
+        // de otros miembros. Solo en memoria — NO se persiste a disco (ver
+        // comentario en Save()/Load()), asi que tras un reinicio del
+        // servidor/mundo esta atribucion se pierde para portales que ya
+        // estaban registrados bajo una party antes de ese reinicio.
+        private readonly Dictionary<Vector3i, string> _originalOwnerSteamId =
+            new Dictionary<Vector3i, string>();
+
+        // Feature "portales por party": steamId -> ultimo ownerKey resuelto
+        // (personal o "party:<id>") la ultima vez que se reviso. Usado por
+        // CheckPartyMembershipChanged para detectar cuando un jugador
+        // entra/sale/cambia de party (comparando contra el valor actual de
+        // GetPortalKey) y disparar la migracion automatica de sus portales.
+        private readonly Dictionary<string, string> _lastKnownPortalKey =
+            new Dictionary<string, string>();
 
         private const int MaxPortalsPerTag = 2;
         public const float CooldownSeconds = 5f;
 
         private bool _dirty;
 
+        /// <summary>
+        /// "OwnerKey" (antes "SteamId"): identificador bajo el cual esta
+        /// registrado el portal en "_portals". Feature "portales por party":
+        /// ahora puede ser el steamId personal del jugador (solitario, sin
+        /// party) O un ID de party con prefijo "party:" (ver
+        /// PortalManager.GetPortalKey) — el nombre se actualizo para reflejar
+        /// esto, aunque el TIPO sigue siendo un simple string usado como
+        /// clave de diccionario.
+        /// </summary>
         public struct PortalRef
         {
-            public string SteamId;
+            public string OwnerKey;
             public string Tag;
 
-            public PortalRef(string steamId, string tag)
+            public PortalRef(string ownerKey, string tag)
             {
-                SteamId = steamId;
+                OwnerKey = ownerKey;
                 Tag = tag;
             }
         }
@@ -193,6 +233,229 @@ namespace PortalMod
             }
         }
 
+        // ========================================================================
+        // FEATURE "PORTALES POR PARTY": resolucion de key + migracion.
+        // ========================================================================
+
+        private const string PartyKeyPrefix = "party:";
+
+        /// <summary>True si "key" es un ID de party (no un steamId personal) — ver GetPortalKey.</summary>
+        internal static bool IsPartyKey(string key)
+        {
+            return key != null && key.StartsWith(PartyKeyPrefix, StringComparison.Ordinal);
+        }
+
+        /// <summary>Version sin el flag "inParty" para llamadores que no lo necesitan (comparaciones de dueño, lookups).</summary>
+        public string GetPortalKey(EntityPlayer player)
+        {
+            return GetPortalKey(player, out _);
+        }
+
+        /// <summary>
+        /// Resuelve la clave bajo la que se registran/buscan los portales de
+        /// un jugador: el ID de su party (prefijo "party:") si esta en una,
+        /// o su steamId personal si no. Ver PortalParty.TryGetPartyId sobre
+        /// por que esto usa reflection y por que puede simplemente no
+        /// encontrar ninguna party (fallback seguro: todos solitarios).
+        /// </summary>
+        public string GetPortalKey(EntityPlayer player, out bool inParty)
+        {
+            inParty = false;
+
+            var steamId = PortalIdentity.GetSteamId(player);
+            if (string.IsNullOrEmpty(steamId))
+            {
+                return null;
+            }
+
+            if (PortalParty.TryGetPartyId(player, out var partyId) && !string.IsNullOrEmpty(partyId))
+            {
+                inParty = true;
+                return PartyKeyPrefix + partyId;
+            }
+
+            return steamId;
+        }
+
+        /// <summary>
+        /// Mueve todos los portales registrados bajo "fromKey" a "toKey".
+        /// Si "onlyOriginalOwnerSteamId" no es null, SOLO migra las
+        /// posiciones cuyo dueño original (ver _originalOwnerSteamId) sea
+        /// exactamente ese steamId — usado para "salir de la party", donde
+        /// el jugador que se va debe recuperar UNICAMENTE sus propios
+        /// portales, no los de sus ex-compañeros de party.
+        ///
+        /// LIMITE CONOCIDO (documentado tambien en README): esto NO reaplica
+        /// la regla de "maximo 2 portales por tag" (regla 5) sobre el
+        /// resultado de la fusion. Si dos miembros de la misma party (o un
+        /// jugador migrando hacia una party) ya tenian portales bajo el
+        /// mismo tag por separado, tras migrar puede terminar habiendo 3+
+        /// posiciones registradas para ese tag en la party. El sistema sigue
+        /// funcionando (TryGetDestination toma el primer resultado que no
+        /// sea el origen), pero deja de garantizar estrictamente el limite
+        /// de 2. Rechazar la migracion en ese caso dejaria un bloque fisico
+        /// ya colocado en el mundo sin ningun registro — se considero peor
+        /// resultado que relajar el limite en este caso especifico.
+        /// </summary>
+        public void MigratePortals(string fromKey, string toKey, string onlyOriginalOwnerSteamId = null)
+        {
+            if (string.IsNullOrEmpty(fromKey) || string.IsNullOrEmpty(toKey) || fromKey == toKey)
+            {
+                return;
+            }
+
+            lock (_lock)
+            {
+                if (!_portals.TryGetValue(fromKey, out var fromTagMap))
+                {
+                    return;
+                }
+
+                var migratedCount = 0;
+                var emptiedTags = new List<string>();
+
+                foreach (var tagEntry in fromTagMap)
+                {
+                    var tag = tagEntry.Key;
+                    var positions = tagEntry.Value;
+                    var toMove = new List<Vector3i>();
+
+                    foreach (var pos in positions)
+                    {
+                        if (onlyOriginalOwnerSteamId != null)
+                        {
+                            var isOwnedByThatPlayer = _originalOwnerSteamId.TryGetValue(pos, out var origOwner) &&
+                                                       origOwner == onlyOriginalOwnerSteamId;
+                            if (!isOwnedByThatPlayer)
+                            {
+                                continue;
+                            }
+                        }
+
+                        toMove.Add(pos);
+                    }
+
+                    if (toMove.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    if (!_portals.TryGetValue(toKey, out var toTagMap))
+                    {
+                        toTagMap = new Dictionary<string, List<Vector3i>>();
+                        _portals[toKey] = toTagMap;
+                    }
+
+                    if (!toTagMap.TryGetValue(tag, out var destPositions))
+                    {
+                        destPositions = new List<Vector3i>();
+                        toTagMap[tag] = destPositions;
+                    }
+
+                    foreach (var pos in toMove)
+                    {
+                        positions.Remove(pos);
+                        destPositions.Add(pos);
+                        _positionLookup[pos] = new PortalRef(toKey, tag);
+                        migratedCount++;
+                    }
+
+                    if (positions.Count == 0)
+                    {
+                        emptiedTags.Add(tag);
+                    }
+                }
+
+                foreach (var tag in emptiedTags)
+                {
+                    fromTagMap.Remove(tag);
+                }
+
+                if (fromTagMap.Count == 0)
+                {
+                    _portals.Remove(fromKey);
+                }
+
+                if (migratedCount > 0)
+                {
+                    _dirty = true;
+                    API.Log($"[PortalMod] Migrando {migratedCount} portales de {fromKey} a {toKey}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Detecta si la party de un jugador cambio desde la ultima vez que
+        /// se revisó (union, salida, o cambio de una party a otra) y dispara
+        /// la migracion automatica correspondiente. Pensado para llamarse
+        /// periodicamente (ver PortalTeleport — throttleado ahi, no en cada
+        /// frame) para cada jugador activo.
+        ///
+        /// DECISION DE DISEÑO — POLLING EN VEZ DE EVENTO: no se pudo
+        /// confirmar contra el Assembly-CSharp.dll real ningun evento de
+        /// "el jugador se unio/salio de una party" (candidatos que se
+        /// hubieran probado: PlayerJoinedParty, OnPartyChanged,
+        /// PartyManager). Referenciar un evento inexistente directo en el
+        /// codigo (a diferencia de un patch de Harmony, que falla en
+        /// RUNTIME con un mensaje claro) es un error de COMPILACION duro
+        /// que tumbaria todo el mod. Este mod ya usa polling exitosamente
+        /// para varios otros estados que cambian con el tiempo (cooldown,
+        /// energia electrica del portal — ver PortalPower/PortalVisualFX),
+        /// asi que se opto por el mismo patron aca: comparar el resultado
+        /// de GetPortalKey contra el ultimo valor conocido, en vez de
+        /// apostar a un nombre de evento sin confirmar.
+        /// </summary>
+        public void CheckPartyMembershipChanged(EntityPlayer player)
+        {
+            var steamId = PortalIdentity.GetSteamId(player);
+            if (string.IsNullOrEmpty(steamId))
+            {
+                return;
+            }
+
+            var currentKey = GetPortalKey(player);
+            if (string.IsNullOrEmpty(currentKey))
+            {
+                return;
+            }
+
+            lock (_lock)
+            {
+                if (!_lastKnownPortalKey.TryGetValue(steamId, out var lastKey))
+                {
+                    // Primera vez que se ve a este jugador en este proceso:
+                    // solo registrar el estado inicial, no hay "cambio" que migrar.
+                    _lastKnownPortalKey[steamId] = currentKey;
+                    return;
+                }
+
+                if (lastKey == currentKey)
+                {
+                    return;
+                }
+
+                if (lastKey == steamId)
+                {
+                    // Union a una party: la key anterior ERA su steamId
+                    // personal, asi que TODO lo que tenia registrado bajo esa
+                    // key es, por definicion, suyo — se migra completo.
+                    MigratePortals(lastKey, currentKey);
+                }
+                else
+                {
+                    // Estaba en una party (lastKey) y ahora cambio (a otra
+                    // party, o volvio a estar solo): migrar SOLO lo que este
+                    // jugador coloco originalmente, dejando el resto con la
+                    // party anterior (comportamiento esperado documentado en
+                    // README: los portales que colocaron OTROS miembros se
+                    // quedan con la party, no siguen a este jugador).
+                    MigratePortals(lastKey, currentKey, onlyOriginalOwnerSteamId: steamId);
+                }
+
+                _lastKnownPortalKey[steamId] = currentKey;
+            }
+        }
+
         public void Init()
         {
             API.Log("PortalManager inicializado (persistencia en memoria + disco).");
@@ -204,23 +467,26 @@ namespace PortalMod
 
         /// <summary>
         /// Registra un nuevo portal para un jugador bajo un tag determinado.
-        /// Valida que no existan ya 2 portales con ese tag para ese jugador.
+        /// Valida que no existan ya 2 portales con ese tag para el dueño
+        /// resuelto (party del jugador, o su steamId personal si no esta en
+        /// una — ver GetPortalKey).
         /// </summary>
-        public RegisterResult RegisterPortal(string steamId, string tag, Vector3i pos)
+        public RegisterResult RegisterPortal(EntityPlayer player, string tag, Vector3i pos)
         {
-            API.Log("[PortalMod] RegisterPortal llamado - steamId: " + steamId + " tag: " + tag + " pos: " + pos);
+            // AUDITORIA (NullReferenceException sin capturar), + Feature
+            // "portales por party": antes este metodo tomaba un "steamId"
+            // string ya resuelto por el llamador; ahora toma el EntityPlayer
+            // directo para poder resolver tanto el ownerKey (steamId o
+            // "party:<id>") como el steamId personal "de verdad" (necesario
+            // para _originalOwnerSteamId, ver MigratePortals) en un unico lugar.
+            var ownerKey = GetPortalKey(player, out var inParty);
+            var originalSteamId = PortalIdentity.GetSteamId(player);
 
-            // AUDITORIA (NullReferenceException/ArgumentNullException sin
-            // capturar): Dictionary<string, T>.TryGetValue lanza
-            // ArgumentNullException si la clave es null. steamId==null puede
-            // llegar aca desde un caller con datos invalidos (ya se blindo el
-            // camino conocido — XUiPortalTag.Confirm — pero este metodo es
-            // publico y otro codigo podria llamarlo directo). Fallar
-            // silenciosamente con EmptyTag (reutilizando el resultado mas
-            // parecido) es mejor que tumbar al llamador con una excepcion.
-            if (steamId == null)
+            API.Log("[PortalMod] Portal registrado para key: " + ownerKey + " (party: " + inParty + ")");
+
+            if (ownerKey == null)
             {
-                API.LogWarning("RegisterPortal llamado con steamId null; se ignora.");
+                API.LogWarning("RegisterPortal llamado con un jugador invalido (GetPortalKey devolvio null); se ignora.");
                 return RegisterResult.EmptyTag;
             }
 
@@ -246,10 +512,10 @@ namespace PortalMod
 
             lock (_lock)
             {
-                if (!_portals.TryGetValue(steamId, out var tagMap))
+                if (!_portals.TryGetValue(ownerKey, out var tagMap))
                 {
                     tagMap = new Dictionary<string, List<Vector3i>>();
-                    _portals[steamId] = tagMap;
+                    _portals[ownerKey] = tagMap;
                 }
 
                 if (!tagMap.TryGetValue(tag, out var positions))
@@ -265,7 +531,16 @@ namespace PortalMod
                 }
 
                 positions.Add(pos);
-                _positionLookup[pos] = new PortalRef(steamId, tag);
+                _positionLookup[pos] = new PortalRef(ownerKey, tag);
+
+                // Feature "portales por party": solo se fija si todavia no
+                // hay un dueño original para esta posicion (no pisar el dato
+                // en un re-registro por rename — ver RenamePortal, que
+                // preserva esta entrada a proposito al desregistrar).
+                if (!_originalOwnerSteamId.ContainsKey(pos))
+                {
+                    _originalOwnerSteamId[pos] = originalSteamId;
+                }
 
                 if (!_biomes.ContainsKey(pos))
                 {
@@ -281,7 +556,7 @@ namespace PortalMod
 
                 _dirty = true;
 
-                API.Log($"Portal registrado: steamId={steamId} tag='{tag}' pos={pos} (par actual: {positions.Count}/2)");
+                API.Log($"Portal registrado: ownerKey={ownerKey} tag='{tag}' pos={pos} (par actual: {positions.Count}/2)");
 
                 if (positions.Count == MaxPortalsPerTag)
                 {
@@ -320,8 +595,19 @@ namespace PortalMod
         /// <summary>
         /// Elimina un portal (por ejemplo al destruirse el bloque). El otro
         /// portal del par, si existe, queda automaticamente huerfano.
+        /// "ownerKey" no se usa realmente para la busqueda (se resuelve
+        /// fresco desde "_positionLookup"); se mantiene en la firma por
+        /// claridad para quien llama.
+        ///
+        /// "clearOriginalOwner" (Feature "portales por party"): en true
+        /// (default, destruccion real del bloque) tambien borra el registro
+        /// de quien coloco fisicamente el portal. RenamePortal llama esto
+        /// con "false" porque un renombrado hace un
+        /// Unregister+Register interno en la MISMA posicion — el dueño
+        /// original no deberia "reiniciarse" solo porque alguien le cambio
+        /// el nombre al portal.
         /// </summary>
-        public bool UnregisterPortal(string steamId, Vector3i pos)
+        public bool UnregisterPortal(string ownerKey, Vector3i pos, bool clearOriginalOwner = true)
         {
             lock (_lock)
             {
@@ -330,7 +616,7 @@ namespace PortalMod
                     return false;
                 }
 
-                if (_portals.TryGetValue(portalRef.SteamId, out var tagMap) &&
+                if (_portals.TryGetValue(portalRef.OwnerKey, out var tagMap) &&
                     tagMap.TryGetValue(portalRef.Tag, out var positions))
                 {
                     var wasActivePair = positions.Count == MaxPortalsPerTag;
@@ -350,16 +636,22 @@ namespace PortalMod
 
                     if (tagMap.Count == 0)
                     {
-                        _portals.Remove(portalRef.SteamId);
+                        _portals.Remove(portalRef.OwnerKey);
                     }
                 }
 
                 _positionLookup.Remove(pos);
                 _biomes.Remove(pos);
                 _styles.Remove(pos);
+
+                if (clearOriginalOwner)
+                {
+                    _originalOwnerSteamId.Remove(pos);
+                }
+
                 _dirty = true;
 
-                API.Log($"Portal eliminado: steamId={portalRef.SteamId} tag='{portalRef.Tag}' pos={pos}");
+                API.Log($"Portal eliminado: ownerKey={portalRef.OwnerKey} tag='{portalRef.Tag}' pos={pos}");
                 return true;
             }
         }
@@ -369,12 +661,14 @@ namespace PortalMod
         /// del tag anterior (dejando huerfano a su antiguo par, si lo tenia) y
         /// se intenta vincular al nuevo tag.
         /// </summary>
-        public RegisterResult RenamePortal(string steamId, Vector3i pos, string newTag)
+        public RegisterResult RenamePortal(EntityPlayer player, Vector3i pos, string newTag)
         {
+            var ownerKey = GetPortalKey(player);
+
             // Ver comentario identico en RegisterPortal.
-            if (steamId == null)
+            if (ownerKey == null)
             {
-                API.LogWarning("RenamePortal llamado con steamId null; se ignora.");
+                API.LogWarning("RenamePortal llamado con un jugador invalido (GetPortalKey devolvio null); se ignora.");
                 return RegisterResult.EmptyTag;
             }
 
@@ -394,30 +688,34 @@ namespace PortalMod
                 if (!_positionLookup.TryGetValue(pos, out var currentRef))
                 {
                     // No estaba registrado todavia: comportarse como un registro nuevo.
-                    return RegisterPortal(steamId, newTag, pos);
+                    return RegisterPortal(player, newTag, pos);
                 }
 
                 if (currentRef.Tag == newTag)
                 {
                     // Sin cambios reales.
-                    return _portals[steamId][newTag].Count == MaxPortalsPerTag
+                    return _portals[ownerKey][newTag].Count == MaxPortalsPerTag
                         ? RegisterResult.Success
                         : RegisterResult.SuccessOrphan;
                 }
 
                 // Verificar espacio en el tag destino ANTES de desvincular del actual,
                 // para no dejar el portal "en el aire" si el nuevo tag ya esta lleno.
-                if (_portals.TryGetValue(steamId, out var tagMapCheck) &&
+                if (_portals.TryGetValue(ownerKey, out var tagMapCheck) &&
                     tagMapCheck.TryGetValue(newTag, out var destPositions) &&
                     destPositions.Count >= MaxPortalsPerTag)
                 {
                     return RegisterResult.TagFull;
                 }
 
-                UnregisterPortal(steamId, pos);
-                var result = RegisterPortal(steamId, newTag, pos);
+                // clearOriginalOwner: false — ver comentario en UnregisterPortal:
+                // este Unregister es parte interna de un renombrado (misma
+                // posicion, mismo bloque fisico), no una destruccion real, asi
+                // que el dueño original NO debe reiniciarse aca.
+                UnregisterPortal(ownerKey, pos, clearOriginalOwner: false);
+                var result = RegisterPortal(player, newTag, pos);
 
-                API.Log($"Portal renombrado: steamId={steamId} pos={pos} '{currentRef.Tag}' -> '{newTag}'");
+                API.Log($"Portal renombrado: ownerKey={ownerKey} pos={pos} '{currentRef.Tag}' -> '{newTag}'");
                 return result;
             }
         }
@@ -431,13 +729,13 @@ namespace PortalMod
         /// encontrado / portal huerfano) si no hay un segundo portal con el
         /// mismo tag todavia.
         /// </summary>
-        public bool TryGetDestination(string steamId, string tag, Vector3i origin, out Vector3i destination)
+        public bool TryGetDestination(string ownerKey, string tag, Vector3i origin, out Vector3i destination)
         {
             lock (_lock)
             {
                 destination = default(Vector3i);
 
-                if (!_portals.TryGetValue(steamId, out var tagMap) || !tagMap.TryGetValue(tag, out var positions))
+                if (!_portals.TryGetValue(ownerKey, out var tagMap) || !tagMap.TryGetValue(tag, out var positions))
                 {
                     return false;
                 }
@@ -462,17 +760,17 @@ namespace PortalMod
         }
 
         /// <summary>Devuelve el tag asociado a una posicion de portal, o null si no esta registrada.</summary>
-        public string GetTagAt(string steamId, Vector3i pos)
+        public string GetTagAt(string ownerKey, Vector3i pos)
         {
             lock (_lock)
             {
-                return _positionLookup.TryGetValue(pos, out var portalRef) && portalRef.SteamId == steamId
+                return _positionLookup.TryGetValue(pos, out var portalRef) && portalRef.OwnerKey == ownerKey
                     ? portalRef.Tag
                     : null;
             }
         }
 
-        /// <summary>Version que no filtra por steamId, usada por los patches para saber "que hay aqui".</summary>
+        /// <summary>Version que no filtra por dueño, usada por los patches para saber "que hay aqui".</summary>
         public bool TryGetPortalRef(Vector3i pos, out PortalRef portalRef)
         {
             lock (_lock)
@@ -481,11 +779,11 @@ namespace PortalMod
             }
         }
 
-        public bool IsPortalOrphan(string steamId, string tag)
+        public bool IsPortalOrphan(string ownerKey, string tag)
         {
             lock (_lock)
             {
-                return _portals.TryGetValue(steamId, out var tagMap) &&
+                return _portals.TryGetValue(ownerKey, out var tagMap) &&
                        tagMap.TryGetValue(tag, out var positions) &&
                        positions.Count < MaxPortalsPerTag;
             }
@@ -505,7 +803,7 @@ namespace PortalMod
                     return false;
                 }
 
-                return _portals.TryGetValue(portalRef.SteamId, out var tagMap) &&
+                return _portals.TryGetValue(portalRef.OwnerKey, out var tagMap) &&
                        tagMap.TryGetValue(portalRef.Tag, out var positions) &&
                        positions.Count == MaxPortalsPerTag;
             }
@@ -612,11 +910,11 @@ namespace PortalMod
                 try
                 {
                     var sb = new StringBuilder();
-                    foreach (var playerEntry in _portals)
+                    foreach (var ownerEntry in _portals)
                     {
-                        foreach (var tagEntry in playerEntry.Value)
+                        foreach (var tagEntry in ownerEntry.Value)
                         {
-                            sb.Append(playerEntry.Key).Append('\t').Append(tagEntry.Key);
+                            sb.Append(ownerEntry.Key).Append('\t').Append(tagEntry.Key);
                             foreach (var pos in tagEntry.Value)
                             {
                                 var biome = GetBiome(pos) ?? string.Empty;
@@ -722,6 +1020,13 @@ namespace PortalMod
                 // no tiene motivo para sobrevivir a un cambio de mundo.
                 _cooldowns.Clear();
 
+                // Feature "portales por party": limpiar tambien el indice de
+                // dueño original y el cache de "ultima key conocida" — igual
+                // que el resto de las colecciones, son datos del mundo/
+                // proceso anterior que no deben sobrevivir a cargar otro mundo.
+                _originalOwnerSteamId.Clear();
+                _lastKnownPortalKey.Clear();
+
                 var discardedCount = 0;
                 var skippedLineCount = 0;
 
@@ -751,7 +1056,7 @@ namespace PortalMod
                         continue;
                     }
 
-                    var steamId = parts[0];
+                    var ownerKey = parts[0];
                     var tag = parts[1];
                     var positions = new List<Vector3i>();
 
@@ -832,7 +1137,21 @@ namespace PortalMod
                         _biomes[pos] = savedBiome;
                         _styles[pos] = savedStyle;
                         positions.Add(pos);
-                        _positionLookup[pos] = new PortalRef(steamId, tag);
+                        _positionLookup[pos] = new PortalRef(ownerKey, tag);
+
+                        // Feature "portales por party": ver comentario en el
+                        // campo de la clase — no se persiste el dueño
+                        // original real, asi que se usa como fallback SOLO
+                        // para claves personales (donde "ownerKey" YA ES
+                        // literalmente el steamId de su unico dueño posible).
+                        // Para claves de party no se puede reconstruir sin
+                        // haberlo guardado — queda sin asignar (Migrate al
+                        // salir de party simplemente no movera ese portal en
+                        // particular hasta que se reinicie su atribucion).
+                        if (!IsPartyKey(ownerKey) && !_originalOwnerSteamId.ContainsKey(pos))
+                        {
+                            _originalOwnerSteamId[pos] = ownerKey;
+                        }
                     }
 
                     if (positions.Count == 0)
@@ -842,10 +1161,10 @@ namespace PortalMod
                         continue;
                     }
 
-                    if (!_portals.TryGetValue(steamId, out var tagMap))
+                    if (!_portals.TryGetValue(ownerKey, out var tagMap))
                     {
                         tagMap = new Dictionary<string, List<Vector3i>>();
-                        _portals[steamId] = tagMap;
+                        _portals[ownerKey] = tagMap;
                     }
 
                     tagMap[tag] = positions;

@@ -121,9 +121,32 @@ namespace PortalMod
                 return;
             }
 
+            // Feature "portales por party": detecta si la party del jugador
+            // cambio desde la ultima revision y migra sus portales
+            // automaticamente si hace falta (throttleado internamente por
+            // steamId — ver PortalManager.CheckPartyMembershipChanged). Se
+            // llama ANTES del chequeo de cooldown a proposito, para que la
+            // migracion siga funcionando aunque el jugador este en cooldown.
+            PortalManager.Instance.CheckPartyMembershipChanged(player);
+
             // Un jugador recien teletransportado no puede volver a activar un
             // portal hasta que expire el cooldown (regla 7 — evita loops).
+            // El cooldown es SIEMPRE por steamId individual, nunca por party
+            // (ver comentario en PortalManager._cooldowns) — dos miembros de
+            // la misma party pueden viajar cada uno con su propio cooldown
+            // independiente.
             if (PortalManager.Instance.IsOnCooldown(steamId))
+            {
+                return;
+            }
+
+            // "ownerKey": steamId personal o "party:<id>" segun corresponda
+            // (ver PortalManager.GetPortalKey) — es la clave real bajo la que
+            // estan registrados los portales que este jugador puede usar,
+            // reemplaza el uso directo de "steamId" para todo lo relacionado
+            // con DUEÑO/PROPIEDAD del portal (Feature "portales por party").
+            var ownerKey = PortalManager.Instance.GetPortalKey(player);
+            if (string.IsNullOrEmpty(ownerKey))
             {
                 return;
             }
@@ -140,14 +163,17 @@ namespace PortalMod
 
             if (TryResolvePortalAt(feet, out var portalRef) || TryResolvePortalAt(head, out portalRef))
             {
-                if (portalRef.SteamId != steamId)
+                if (portalRef.OwnerKey != ownerKey)
                 {
-                    // Los portales de otros jugadores no interactuan (cada
-                    // jugador gestiona su propio set de portales).
+                    // Portal de otro jugador/party: no interactuan entre si
+                    // (regla original) — con la Feature de party, esto ahora
+                    // compara "ownerKey" (party o personal), no el steamId
+                    // crudo, para que los companeros de party SI puedan
+                    // usarse entre si los portales de cualquier miembro.
                     return;
                 }
 
-                TryTeleport(player, steamId, portalRef.Tag, feet);
+                TryTeleport(player, steamId, ownerKey, portalRef.Tag, feet);
             }
         }
 
@@ -156,9 +182,9 @@ namespace PortalMod
             return PortalManager.Instance.TryGetPortalRef(pos, out portalRef);
         }
 
-        private static void TryTeleport(EntityPlayer player, string steamId, string tag, Vector3i originPos)
+        private static void TryTeleport(EntityPlayer player, string steamId, string ownerKey, string tag, Vector3i originPos)
         {
-            if (!PortalManager.Instance.TryGetDestination(steamId, tag, originPos, out var destinationBlockPos))
+            if (!PortalManager.Instance.TryGetDestination(ownerKey, tag, originPos, out var destinationBlockPos))
             {
                 // Regla 6: portal huerfano — no ocurre teletransporte.
                 ShowOrphanMessageThrottled(player, steamId, tag);

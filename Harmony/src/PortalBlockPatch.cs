@@ -340,7 +340,7 @@ namespace PortalMod
 
                 if (PortalManager.Instance.TryGetPortalRef(blockPos, out var portalRef))
                 {
-                    PortalManager.Instance.UnregisterPortal(portalRef.SteamId, blockPos);
+                    PortalManager.Instance.UnregisterPortal(portalRef.OwnerKey, blockPos);
                     API.Log($"portalBlock destruido en {blockPos}, desregistrado (tag='{portalRef.Tag}').");
                 }
             }

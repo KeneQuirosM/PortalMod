@@ -274,10 +274,9 @@ namespace PortalMod
                     return;
                 }
 
-                var steamId = PortalIdentity.GetSteamId(_pendingPlayer);
                 var result = _pendingMode == Mode.NewPortal
-                    ? PortalManager.Instance.RegisterPortal(steamId, tag, _pendingBlockPos)
-                    : PortalManager.Instance.RenamePortal(steamId, _pendingBlockPos, tag);
+                    ? PortalManager.Instance.RegisterPortal(_pendingPlayer, tag, _pendingBlockPos)
+                    : PortalManager.Instance.RenamePortal(_pendingPlayer, _pendingBlockPos, tag);
 
                 switch (result)
                 {

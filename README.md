@@ -160,10 +160,40 @@ cp Harmony/PortalMod.csproj.template Harmony/PortalMod.csproj
 
 ## Multijugador
 
-Cada jugador gestiona su propio conjunto de portales de forma independiente
-(indexados internamente por su identificador de plataforma, "steamId"). Los
-portales de un jugador no interactúan con los de otro, incluso si usan el
-mismo tag.
+### Portales por party/grupo
+
+Los portales se comparten entre **todos los miembros de la misma party**. Un
+jugador que no está en ninguna party sigue teniendo un conjunto de portales
+puramente personal, exactamente igual que antes de esta funcionalidad.
+
+- **Jugador solitario (sin party):** sus portales quedan indexados por su
+  identificador de plataforma personal ("steamId") — solo él puede usarlos.
+- **Miembro de una party:** sus portales (y los de cualquier otro miembro)
+  quedan indexados por el ID de la party, no por steamId individual — **todos
+  los miembros pueden usar los portales de todos los demás miembros**, sin
+  importar quién los colocó.
+- **Parties distintas (o un solitario vs. una party) nunca comparten
+  portales entre sí**, ni por accidente ni por diseño: la clave interna
+  ("ownerKey") de una party y la de un jugador solitario nunca coinciden.
+
+**Migración automática al entrar/salir de una party:**
+
+- Si colocaste portales estando solo y **luego te unís a una party**, esos
+  portales se migran automáticamente al grupo — pasan a estar disponibles
+  para todos los miembros.
+- Si estás en una party y **te vas** (o te expulsan, o la party se
+  disuelve), recuperás como personales **únicamente los portales que vos
+  colocaste originalmente** — los portales que colocaron tus excompañeros de
+  party se quedan con la party, no te siguen.
+- Esta migración se detecta por sondeo periódico (no por un evento de
+  "unirse/salir de party" — ver *Limitaciones conocidas* más abajo sobre por
+  qué), así que puede haber un retraso de hasta unos segundos entre el
+  cambio real de party y la migración de tus portales.
+
+**El cooldown de 5 segundos post-teletransporte (regla anti-loop) sigue
+siendo siempre individual**, incluso dentro de una party: cada jugador tiene
+su propio cooldown independiente, viajar vos no bloquea a tus compañeros de
+party.
 
 ## Persistencia
 
@@ -379,6 +409,37 @@ puntos más relevantes:
   propio del mod.
 - Acceso al `XUiManager` del jugador local y nombres de controles del
   sistema de binding V3.0 (`XUiPortalTag.cs`, `windows.xml`).
+- **Sistema de party/grupo (`PortalParty.cs`)**: no se pudo confirmar contra
+  el `Assembly-CSharp.dll` real si V3.0 tiene siquiera un sistema de
+  party/grupo formal, ni bajo qué nombre (`PartyManager`, `EntityPlayer.Party`,
+  etc.). Se resuelve por reflection probando varios nombres candidatos
+  (ver comentario extenso en `PortalParty.cs`); si ninguno existe en el
+  juego real, el mod simplemente sigue funcionando tratando a todos los
+  jugadores como solitarios — el mismo comportamiento que había antes de
+  esta funcionalidad, sin romper nada.
+- **Evento de "unirse/salir de party"**: por el mismo motivo (no se pudo
+  confirmar que exista, y una referencia directa a un evento inexistente
+  sería un error de compilación, no solo de runtime), la migración de
+  portales al cambiar de party **no** usa un evento — se detecta por
+  sondeo periódico dentro del mismo tick que ya revisa colisiones
+  jugador-portal (`PortalManager.CheckPartyMembershipChanged`, llamado
+  desde `PortalTeleport.cs`). Esto puede introducir un pequeño retraso
+  (hasta unos segundos) entre el cambio real de party y la migración.
+- **Migración de portales no reaplica el límite de 2 por tag**: si dos
+  miembros de una party (o un jugador que se une a una que ya tenía
+  portales) tenían portales con el mismo tag por separado, tras fusionarse
+  puede terminar habiendo 3 o más posiciones registradas para ese tag. El
+  sistema sigue funcionando (se usa el primer destino válido que no sea el
+  origen), pero deja de garantizar estrictamente el máximo de 2 — se
+  prefirió esto a rechazar la migración, lo que dejaría un bloque físico ya
+  colocado en el mundo sin ningún registro.
+- **Atribución de "dueño original" no se persiste a disco**: el índice de
+  qué jugador colocó físicamente cada portal (usado para devolver solo tus
+  propios portales al salir de una party) vive únicamente en memoria. Si el
+  servidor se reinicia mientras un portal ya está registrado bajo una
+  party, esa atribución se pierde para ese portal en particular — al salir
+  de la party después de un reinicio, ese portal específico no se migrará
+  de vuelta a nadie automáticamente (se queda con la party).
 
 Ya resueltos (confirmados contra el XML original del mod de assets SCore,
 pendientes solo de probarse en el juego real — ver `TESTING.md`):
