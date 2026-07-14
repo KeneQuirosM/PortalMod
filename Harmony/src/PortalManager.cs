@@ -36,6 +36,20 @@ namespace PortalMod
         private static PortalManager _instance;
         public static PortalManager Instance => _instance ?? (_instance = new PortalManager());
 
+        // AUDITORIA (seguridad en multijugador): protege TODAS las
+        // colecciones de abajo (_portals, _positionLookup, _biomes, _styles,
+        // _cooldowns) contra acceso concurrente. No se pudo confirmar con
+        // certeza si Harmony/el juego llaman a estos metodos exclusivamente
+        // desde el hilo principal o si algun camino de red (RPCs de
+        // colocacion/destruccion de bloque en servidor dedicado) puede
+        // ejecutarlos desde otro hilo — el costo de un lock sin contencion es
+        // minimo, asi que se agrega como medida defensiva de bajo costo en
+        // vez de asumir que nunca hay concurrencia. "lock" en C# es
+        // reentrante por hilo, asi que metodos que se llaman entre si en el
+        // mismo hilo (ej. RenamePortal -> UnregisterPortal + RegisterPortal)
+        // no causan deadlock.
+        private readonly object _lock = new object();
+
         // steamId -> tag -> [posiciones] (maximo 2 posiciones por tag)
         private readonly Dictionary<string, Dictionary<string, List<Vector3i>>> _portals =
             new Dictionary<string, Dictionary<string, List<Vector3i>>>();
@@ -147,7 +161,10 @@ namespace PortalMod
         /// <summary>Bioma guardado para un portal ya registrado, o null si no se pudo resolver (usa la variante "default" — ver PortalBiomes).</summary>
         public string GetBiome(Vector3i pos)
         {
-            return _biomes.TryGetValue(pos, out var biome) ? biome : null;
+            lock (_lock)
+            {
+                return _biomes.TryGetValue(pos, out var biome) ? biome : null;
+            }
         }
 
         /// <summary>
@@ -170,7 +187,10 @@ namespace PortalMod
         /// <summary>Estilo guardado para un portal ya registrado, o null si no se pudo resolver (usa PortalBiomes.DefaultStyle — el estilo "legacy" original).</summary>
         public string GetStyle(Vector3i pos)
         {
-            return _styles.TryGetValue(pos, out var style) ? style : null;
+            lock (_lock)
+            {
+                return _styles.TryGetValue(pos, out var style) ? style : null;
+            }
         }
 
         public void Init()
@@ -190,72 +210,111 @@ namespace PortalMod
         {
             API.Log("[PortalMod] RegisterPortal llamado - steamId: " + steamId + " tag: " + tag + " pos: " + pos);
 
+            // AUDITORIA (NullReferenceException/ArgumentNullException sin
+            // capturar): Dictionary<string, T>.TryGetValue lanza
+            // ArgumentNullException si la clave es null. steamId==null puede
+            // llegar aca desde un caller con datos invalidos (ya se blindo el
+            // camino conocido — XUiPortalTag.Confirm — pero este metodo es
+            // publico y otro codigo podria llamarlo directo). Fallar
+            // silenciosamente con EmptyTag (reutilizando el resultado mas
+            // parecido) es mejor que tumbar al llamador con una excepcion.
+            if (steamId == null)
+            {
+                API.LogWarning("RegisterPortal llamado con steamId null; se ignora.");
+                return RegisterResult.EmptyTag;
+            }
+
             if (string.IsNullOrWhiteSpace(tag))
             {
                 return RegisterResult.EmptyTag;
             }
 
-            tag = tag.Trim();
-
-            if (!_portals.TryGetValue(steamId, out var tagMap))
+            // AUDITORIA (persistencia — corrupcion de datos): Save() usa TAB
+            // como separador de campo y NEWLINE como separador de linea en su
+            // formato de texto plano (ver Save()/Load() mas abajo). Un tag
+            // con un tab/newline embebido (posible via pegar texto en el
+            // campo, no solo tipeandolo) corromperia el archivo de guardado
+            // la proxima vez que se persista, mezclando campos de una linea
+            // con la siguiente al recargar. Se sanean esos caracteres ANTES
+            // de usar el tag para lo que sea, sin importar quien llame a este
+            // metodo (UI, renombrado, etc.) — un unico punto de aplicacion.
+            tag = SanitizeTag(tag);
+            if (string.IsNullOrWhiteSpace(tag))
             {
-                tagMap = new Dictionary<string, List<Vector3i>>();
-                _portals[steamId] = tagMap;
+                return RegisterResult.EmptyTag;
             }
 
-            if (!tagMap.TryGetValue(tag, out var positions))
+            lock (_lock)
             {
-                positions = new List<Vector3i>();
-                tagMap[tag] = positions;
-            }
-
-            if (positions.Count >= MaxPortalsPerTag)
-            {
-                // Regla 5: maximo 2 portales por tag.
-                return RegisterResult.TagFull;
-            }
-
-            positions.Add(pos);
-            _positionLookup[pos] = new PortalRef(steamId, tag);
-
-            if (!_biomes.ContainsKey(pos))
-            {
-                _biomes[pos] = ResolveBiomeName(pos);
-                API.Log($"[PortalMod] Bioma detectado para portal en {pos}: {_biomes[pos] ?? "(desconocido, usa variante default)"}");
-            }
-
-            if (!_styles.ContainsKey(pos))
-            {
-                _styles[pos] = ResolveStyleName(pos);
-                API.Log($"[PortalMod] Estilo detectado para portal en {pos}: {_styles[pos] ?? "(desconocido, usa estilo default/legacy)"}");
-            }
-
-            _dirty = true;
-
-            API.Log($"Portal registrado: steamId={steamId} tag='{tag}' pos={pos} (par actual: {positions.Count}/2)");
-
-            if (positions.Count == MaxPortalsPerTag)
-            {
-                // Par completo: aplicar el modelo/color del bioma en AMBOS
-                // portales del par, no solo en el recien colocado. Este swap
-                // de bloque SOLO ocurre aqui (evento de vinculacion, raro y
-                // deliberado) — nunca en el ambient tick ni segun el estado
-                // de energia, ver FIX real en PortalVisualFX.cs sobre por
-                // que un swap de bloque frecuente rompe la conexion de cable
-                // real (Feature "requiere electricidad").
-                foreach (var p in positions)
+                if (!_portals.TryGetValue(steamId, out var tagMap))
                 {
-                    PortalVisualFX.RefreshBlockState(p, linked: true);
+                    tagMap = new Dictionary<string, List<Vector3i>>();
+                    _portals[steamId] = tagMap;
                 }
 
-                return RegisterResult.Success;
-            }
+                if (!tagMap.TryGetValue(tag, out var positions))
+                {
+                    positions = new List<Vector3i>();
+                    tagMap[tag] = positions;
+                }
 
-            // Portal huerfano: asegurar que quede en estado visual inactivo
-            // (relevante sobre todo al renombrar, donde el bloque pudo venir de
-            // un estado activo previo).
-            PortalVisualFX.RefreshBlockState(pos, linked: false);
-            return RegisterResult.SuccessOrphan;
+                if (positions.Count >= MaxPortalsPerTag)
+                {
+                    // Regla 5: maximo 2 portales por tag.
+                    return RegisterResult.TagFull;
+                }
+
+                positions.Add(pos);
+                _positionLookup[pos] = new PortalRef(steamId, tag);
+
+                if (!_biomes.ContainsKey(pos))
+                {
+                    _biomes[pos] = ResolveBiomeName(pos);
+                    API.Log($"[PortalMod] Bioma detectado para portal en {pos}: {_biomes[pos] ?? "(desconocido, usa variante default)"}");
+                }
+
+                if (!_styles.ContainsKey(pos))
+                {
+                    _styles[pos] = ResolveStyleName(pos);
+                    API.Log($"[PortalMod] Estilo detectado para portal en {pos}: {_styles[pos] ?? "(desconocido, usa estilo default/legacy)"}");
+                }
+
+                _dirty = true;
+
+                API.Log($"Portal registrado: steamId={steamId} tag='{tag}' pos={pos} (par actual: {positions.Count}/2)");
+
+                if (positions.Count == MaxPortalsPerTag)
+                {
+                    // Par completo: aplicar el modelo/color del bioma en AMBOS
+                    // portales del par, no solo en el recien colocado. Este swap
+                    // de bloque SOLO ocurre aqui (evento de vinculacion, raro y
+                    // deliberado) — nunca en el ambient tick ni segun el estado
+                    // de energia, ver FIX real en PortalVisualFX.cs sobre por
+                    // que un swap de bloque frecuente rompe la conexion de cable
+                    // real (Feature "requiere electricidad").
+                    foreach (var p in positions)
+                    {
+                        PortalVisualFX.RefreshBlockState(p, linked: true);
+                    }
+
+                    return RegisterResult.Success;
+                }
+
+                // Portal huerfano: asegurar que quede en estado visual inactivo
+                // (relevante sobre todo al renombrar, donde el bloque pudo venir de
+                // un estado activo previo).
+                PortalVisualFX.RefreshBlockState(pos, linked: false);
+                return RegisterResult.SuccessOrphan;
+            }
+        }
+
+        /// <summary>
+        /// Quita tabs/newlines/retornos de carro de un tag antes de usarlo
+        /// (ver comentario en RegisterPortal) y recorta espacios sobrantes.
+        /// </summary>
+        private static string SanitizeTag(string tag)
+        {
+            return tag.Replace("\t", " ").Replace("\r", " ").Replace("\n", " ").Trim();
         }
 
         /// <summary>
@@ -264,42 +323,45 @@ namespace PortalMod
         /// </summary>
         public bool UnregisterPortal(string steamId, Vector3i pos)
         {
-            if (!_positionLookup.TryGetValue(pos, out var portalRef))
+            lock (_lock)
             {
-                return false;
+                if (!_positionLookup.TryGetValue(pos, out var portalRef))
+                {
+                    return false;
+                }
+
+                if (_portals.TryGetValue(portalRef.SteamId, out var tagMap) &&
+                    tagMap.TryGetValue(portalRef.Tag, out var positions))
+                {
+                    var wasActivePair = positions.Count == MaxPortalsPerTag;
+                    positions.RemoveAll(p => p.Equals(pos));
+
+                    if (wasActivePair && positions.Count == 1)
+                    {
+                        // El par se rompio: el portal restante queda huerfano y
+                        // debe volver al estado visual inactivo.
+                        PortalVisualFX.RefreshBlockState(positions[0], linked: false);
+                    }
+
+                    if (positions.Count == 0)
+                    {
+                        tagMap.Remove(portalRef.Tag);
+                    }
+
+                    if (tagMap.Count == 0)
+                    {
+                        _portals.Remove(portalRef.SteamId);
+                    }
+                }
+
+                _positionLookup.Remove(pos);
+                _biomes.Remove(pos);
+                _styles.Remove(pos);
+                _dirty = true;
+
+                API.Log($"Portal eliminado: steamId={portalRef.SteamId} tag='{portalRef.Tag}' pos={pos}");
+                return true;
             }
-
-            if (_portals.TryGetValue(portalRef.SteamId, out var tagMap) &&
-                tagMap.TryGetValue(portalRef.Tag, out var positions))
-            {
-                var wasActivePair = positions.Count == MaxPortalsPerTag;
-                positions.RemoveAll(p => p.Equals(pos));
-
-                if (wasActivePair && positions.Count == 1)
-                {
-                    // El par se rompio: el portal restante queda huerfano y
-                    // debe volver al estado visual inactivo.
-                    PortalVisualFX.RefreshBlockState(positions[0], linked: false);
-                }
-
-                if (positions.Count == 0)
-                {
-                    tagMap.Remove(portalRef.Tag);
-                }
-
-                if (tagMap.Count == 0)
-                {
-                    _portals.Remove(portalRef.SteamId);
-                }
-            }
-
-            _positionLookup.Remove(pos);
-            _biomes.Remove(pos);
-            _styles.Remove(pos);
-            _dirty = true;
-
-            API.Log($"Portal eliminado: steamId={portalRef.SteamId} tag='{portalRef.Tag}' pos={pos}");
-            return true;
         }
 
         /// <summary>
@@ -309,41 +371,55 @@ namespace PortalMod
         /// </summary>
         public RegisterResult RenamePortal(string steamId, Vector3i pos, string newTag)
         {
+            // Ver comentario identico en RegisterPortal.
+            if (steamId == null)
+            {
+                API.LogWarning("RenamePortal llamado con steamId null; se ignora.");
+                return RegisterResult.EmptyTag;
+            }
+
             if (string.IsNullOrWhiteSpace(newTag))
             {
                 return RegisterResult.EmptyTag;
             }
 
-            newTag = newTag.Trim();
-
-            if (!_positionLookup.TryGetValue(pos, out var currentRef))
+            newTag = SanitizeTag(newTag); // ver comentario en RegisterPortal
+            if (string.IsNullOrWhiteSpace(newTag))
             {
-                // No estaba registrado todavia: comportarse como un registro nuevo.
-                return RegisterPortal(steamId, newTag, pos);
+                return RegisterResult.EmptyTag;
             }
 
-            if (currentRef.Tag == newTag)
+            lock (_lock)
             {
-                // Sin cambios reales.
-                return _portals[steamId][newTag].Count == MaxPortalsPerTag
-                    ? RegisterResult.Success
-                    : RegisterResult.SuccessOrphan;
+                if (!_positionLookup.TryGetValue(pos, out var currentRef))
+                {
+                    // No estaba registrado todavia: comportarse como un registro nuevo.
+                    return RegisterPortal(steamId, newTag, pos);
+                }
+
+                if (currentRef.Tag == newTag)
+                {
+                    // Sin cambios reales.
+                    return _portals[steamId][newTag].Count == MaxPortalsPerTag
+                        ? RegisterResult.Success
+                        : RegisterResult.SuccessOrphan;
+                }
+
+                // Verificar espacio en el tag destino ANTES de desvincular del actual,
+                // para no dejar el portal "en el aire" si el nuevo tag ya esta lleno.
+                if (_portals.TryGetValue(steamId, out var tagMapCheck) &&
+                    tagMapCheck.TryGetValue(newTag, out var destPositions) &&
+                    destPositions.Count >= MaxPortalsPerTag)
+                {
+                    return RegisterResult.TagFull;
+                }
+
+                UnregisterPortal(steamId, pos);
+                var result = RegisterPortal(steamId, newTag, pos);
+
+                API.Log($"Portal renombrado: steamId={steamId} pos={pos} '{currentRef.Tag}' -> '{newTag}'");
+                return result;
             }
-
-            // Verificar espacio en el tag destino ANTES de desvincular del actual,
-            // para no dejar el portal "en el aire" si el nuevo tag ya esta lleno.
-            if (_portals.TryGetValue(steamId, out var tagMapCheck) &&
-                tagMapCheck.TryGetValue(newTag, out var destPositions) &&
-                destPositions.Count >= MaxPortalsPerTag)
-            {
-                return RegisterResult.TagFull;
-            }
-
-            UnregisterPortal(steamId, pos);
-            var result = RegisterPortal(steamId, newTag, pos);
-
-            API.Log($"Portal renombrado: steamId={steamId} pos={pos} '{currentRef.Tag}' -> '{newTag}'");
-            return result;
         }
 
         // ========================================================================
@@ -357,50 +433,62 @@ namespace PortalMod
         /// </summary>
         public bool TryGetDestination(string steamId, string tag, Vector3i origin, out Vector3i destination)
         {
-            destination = default(Vector3i);
-
-            if (!_portals.TryGetValue(steamId, out var tagMap) || !tagMap.TryGetValue(tag, out var positions))
+            lock (_lock)
             {
-                return false;
-            }
+                destination = default(Vector3i);
 
-            if (positions.Count < MaxPortalsPerTag)
-            {
-                // Portal huerfano: solo existe un portal con este tag.
-                return false;
-            }
-
-            foreach (var p in positions)
-            {
-                if (!p.Equals(origin))
+                if (!_portals.TryGetValue(steamId, out var tagMap) || !tagMap.TryGetValue(tag, out var positions))
                 {
-                    destination = p;
-                    return true;
+                    return false;
                 }
-            }
 
-            return false;
+                if (positions.Count < MaxPortalsPerTag)
+                {
+                    // Portal huerfano: solo existe un portal con este tag.
+                    return false;
+                }
+
+                foreach (var p in positions)
+                {
+                    if (!p.Equals(origin))
+                    {
+                        destination = p;
+                        return true;
+                    }
+                }
+
+                return false;
+            }
         }
 
         /// <summary>Devuelve el tag asociado a una posicion de portal, o null si no esta registrada.</summary>
         public string GetTagAt(string steamId, Vector3i pos)
         {
-            return _positionLookup.TryGetValue(pos, out var portalRef) && portalRef.SteamId == steamId
-                ? portalRef.Tag
-                : null;
+            lock (_lock)
+            {
+                return _positionLookup.TryGetValue(pos, out var portalRef) && portalRef.SteamId == steamId
+                    ? portalRef.Tag
+                    : null;
+            }
         }
 
         /// <summary>Version que no filtra por steamId, usada por los patches para saber "que hay aqui".</summary>
         public bool TryGetPortalRef(Vector3i pos, out PortalRef portalRef)
         {
-            return _positionLookup.TryGetValue(pos, out portalRef);
+            lock (_lock)
+            {
+                return _positionLookup.TryGetValue(pos, out portalRef);
+            }
         }
 
         public bool IsPortalOrphan(string steamId, string tag)
         {
-            return _portals.TryGetValue(steamId, out var tagMap) &&
-                   tagMap.TryGetValue(tag, out var positions) &&
-                   positions.Count < MaxPortalsPerTag;
+            lock (_lock)
+            {
+                return _portals.TryGetValue(steamId, out var tagMap) &&
+                       tagMap.TryGetValue(tag, out var positions) &&
+                       positions.Count < MaxPortalsPerTag;
+            }
         }
 
         /// <summary>
@@ -410,14 +498,17 @@ namespace PortalMod
         /// </summary>
         public bool IsPositionActive(Vector3i pos)
         {
-            if (!_positionLookup.TryGetValue(pos, out var portalRef))
+            lock (_lock)
             {
-                return false;
-            }
+                if (!_positionLookup.TryGetValue(pos, out var portalRef))
+                {
+                    return false;
+                }
 
-            return _portals.TryGetValue(portalRef.SteamId, out var tagMap) &&
-                   tagMap.TryGetValue(portalRef.Tag, out var positions) &&
-                   positions.Count == MaxPortalsPerTag;
+                return _portals.TryGetValue(portalRef.SteamId, out var tagMap) &&
+                       tagMap.TryGetValue(portalRef.Tag, out var positions) &&
+                       positions.Count == MaxPortalsPerTag;
+            }
         }
 
         // ========================================================================
@@ -426,22 +517,31 @@ namespace PortalMod
 
         public bool IsOnCooldown(string steamId)
         {
-            return _cooldowns.TryGetValue(steamId, out var until) && Time.time < until;
+            lock (_lock)
+            {
+                return _cooldowns.TryGetValue(steamId, out var until) && Time.time < until;
+            }
         }
 
         public void SetCooldown(string steamId)
         {
-            _cooldowns[steamId] = Time.time + CooldownSeconds;
+            lock (_lock)
+            {
+                _cooldowns[steamId] = Time.time + CooldownSeconds;
+            }
         }
 
         public float GetRemainingCooldown(string steamId)
         {
-            if (!_cooldowns.TryGetValue(steamId, out var until))
+            lock (_lock)
             {
-                return 0f;
-            }
+                if (!_cooldowns.TryGetValue(steamId, out var until))
+                {
+                    return 0f;
+                }
 
-            return Mathf.Max(0f, until - Time.time);
+                return Mathf.Max(0f, until - Time.time);
+            }
         }
 
         // ========================================================================
@@ -502,42 +602,99 @@ namespace PortalMod
         /// </summary>
         public void Save()
         {
-            if (!_dirty)
+            lock (_lock)
+            {
+                if (!_dirty)
+                {
+                    return;
+                }
+
+                try
+                {
+                    var sb = new StringBuilder();
+                    foreach (var playerEntry in _portals)
+                    {
+                        foreach (var tagEntry in playerEntry.Value)
+                        {
+                            sb.Append(playerEntry.Key).Append('\t').Append(tagEntry.Key);
+                            foreach (var pos in tagEntry.Value)
+                            {
+                                var biome = GetBiome(pos) ?? string.Empty;
+                                var style = GetStyle(pos) ?? string.Empty;
+                                sb.Append('\t').Append(pos.x).Append(',').Append(pos.y).Append(',').Append(pos.z).Append(',').Append(biome).Append(',').Append(style);
+                            }
+                            sb.Append('\n');
+                        }
+                    }
+
+                    // AUDITORIA (persistencia — corrupcion de datos): escribir
+                    // directo sobre "portals.dat" con File.WriteAllText no es
+                    // atomico. Si el proceso muere a mitad de la escritura
+                    // (crash del servidor, kill -9, corte de energia), el
+                    // archivo queda truncado/corrupto, y el PROXIMO Load()
+                    // podia perder de golpe los portales de TODOS los
+                    // jugadores (ver FIX adicional en Load(): ahora tolera
+                    // lineas individuales corruptas, pero es mejor evitar la
+                    // corrupcion de entrada). Se escribe primero a un archivo
+                    // temporal y recien al final se reemplaza el archivo real
+                    // (File.Replace, o File.Move si todavia no existe un
+                    // "portals.dat" previo) — un crash a mitad de camino deja
+                    // el ".tmp" a medio escribir pero el "portals.dat" real
+                    // (la ultima version buena conocida) queda intacto.
+                    var path = GetSaveFilePath();
+                    var tempPath = path + ".tmp";
+                    File.WriteAllText(tempPath, sb.ToString(), Encoding.UTF8);
+
+                    if (File.Exists(path))
+                    {
+                        File.Replace(tempPath, path, null);
+                    }
+                    else
+                    {
+                        File.Move(tempPath, path);
+                    }
+
+                    _dirty = false;
+                    API.Log("Portales guardados en disco.");
+                }
+                catch (Exception e)
+                {
+                    API.LogWarning($"No se pudo guardar el estado de portales en disco: {e.Message}. " +
+                                    "Los portales quedaran unicamente en memoria hasta el proximo guardado exitoso.");
+                }
+            }
+        }
+
+        // AUDITORIA (persistencia — perdida de datos en crash duro): el
+        // unico punto de guardado antes de esto era
+        // GameManager_OnApplicationQuit_Patch (ver API.cs), que NUNCA se
+        // ejecuta en un crash duro del proceso (kill -9, OOM, corte de
+        // energia, "Detener" abrupto de un panel de hosting) — en ese
+        // escenario se pierden TODOS los portales creados/modificados desde
+        // el ultimo guardado exitoso. Se agrega un autoguardado periodico
+        // (ver MaybeAutoSave, llamado desde PortalTeleport.Tick) para acotar
+        // esa ventana de perdida; Save() ya es un no-op barato si no hay
+        // cambios pendientes (_dirty), asi que llamarlo seguido no tiene
+        // costo real la mayor parte del tiempo.
+        private const float AutoSaveIntervalSeconds = 300f; // 5 minutos
+        private float _nextAutoSaveTime;
+
+        /// <summary>Guarda en disco si ya pasaron AutoSaveIntervalSeconds desde el ultimo intento Y hay cambios pendientes. Ver comentario de clase arriba.</summary>
+        public void MaybeAutoSave()
+        {
+            if (Time.time < _nextAutoSaveTime)
             {
                 return;
             }
 
-            try
-            {
-                var sb = new StringBuilder();
-                foreach (var playerEntry in _portals)
-                {
-                    foreach (var tagEntry in playerEntry.Value)
-                    {
-                        sb.Append(playerEntry.Key).Append('\t').Append(tagEntry.Key);
-                        foreach (var pos in tagEntry.Value)
-                        {
-                            var biome = GetBiome(pos) ?? string.Empty;
-                            var style = GetStyle(pos) ?? string.Empty;
-                            sb.Append('\t').Append(pos.x).Append(',').Append(pos.y).Append(',').Append(pos.z).Append(',').Append(biome).Append(',').Append(style);
-                        }
-                        sb.Append('\n');
-                    }
-                }
-
-                File.WriteAllText(GetSaveFilePath(), sb.ToString(), Encoding.UTF8);
-                _dirty = false;
-                API.Log("Portales guardados en disco.");
-            }
-            catch (Exception e)
-            {
-                API.LogWarning($"No se pudo guardar el estado de portales en disco: {e.Message}. " +
-                                "Los portales quedaran unicamente en memoria hasta el proximo guardado exitoso.");
-            }
+            _nextAutoSaveTime = Time.time + AutoSaveIntervalSeconds;
+            Save();
         }
 
         public void Load()
         {
+            lock (_lock)
+            {
             var path = GetSaveFilePath();
             if (!File.Exists(path))
             {
@@ -554,11 +711,34 @@ namespace PortalMod
                 _positionLookup.Clear();
                 _biomes.Clear();
                 _styles.Clear();
+                // AUDITORIA (multijugador — datos residuales entre mundos):
+                // _cooldowns NO se limpiaba aqui. Si un jugador queda en
+                // cooldown en el Mundo A y, sin reiniciar el proceso del
+                // juego, se carga el Mundo B (mismo cliente, misma
+                // instancia de PortalManager por ser singleton de proceso),
+                // el cooldown viejo seguia aplicando en el Mundo B para
+                // cualquier steamId (entityId) que coincidiera. No es un
+                // riesgo de crash/corrupcion, pero es estado incorrecto que
+                // no tiene motivo para sobrevivir a un cambio de mundo.
+                _cooldowns.Clear();
 
                 var discardedCount = 0;
+                var skippedLineCount = 0;
 
                 foreach (var rawLine in File.ReadAllLines(path, Encoding.UTF8))
                 {
+                  // AUDITORIA (persistencia — perdida de datos): antes, una
+                  // sola linea corrupta (por ejemplo un int.Parse fallando
+                  // sobre un campo numerico truncado por un crash a mitad de
+                  // escritura, ver FIX de escritura atomica en Save()) hacia
+                  // que la excepcion escapara hasta el catch EXTERIOR de todo
+                  // Load(), descartando de un tiron los portales de TODOS los
+                  // jugadores ya procesados en ese mismo Load(), no solo la
+                  // linea mala. Cada linea ahora se procesa en su propio
+                  // try/catch: si una linea especifica falla, se loguea y se
+                  // salta, pero el resto del archivo se sigue cargando normal.
+                  try
+                  {
                     var line = rawLine.Trim();
                     if (line.Length == 0)
                     {
@@ -669,21 +849,47 @@ namespace PortalMod
                     }
 
                     tagMap[tag] = positions;
+                  }
+                  catch (Exception lineEx)
+                  {
+                    skippedLineCount++;
+                    _dirty = true;
+                    API.LogWarning($"Linea corrupta/invalida en portals.dat, se salta ({lineEx.Message}): '{rawLine}'");
+                  }
                 }
 
-                API.Log($"Portales cargados desde disco ({_positionLookup.Count} en total, {discardedCount} descartados por no tener bloque real).");
+                API.Log($"Portales cargados desde disco ({_positionLookup.Count} en total, {discardedCount} descartados por no tener bloque real, {skippedLineCount} lineas corruptas saltadas).");
             }
             catch (Exception e)
             {
                 API.LogWarning($"No se pudo cargar el estado de portales desde disco: {e.Message}. " +
                                 "Se comenzara con un registro de portales vacio.");
             }
+            }
         }
 
-        /// <summary>Todas las posiciones de portal conocidas, usadas por PortalTeleport para el chequeo de colision por tick.</summary>
-        public IEnumerable<Vector3i> GetAllPortalPositions()
+        /// <summary>
+        /// Todas las posiciones de portal conocidas, usadas por PortalTeleport
+        /// para el chequeo de colision por tick y por PortalVisualFX para el
+        /// ambient tick.
+        /// AUDITORIA (seguridad en multijugador): antes devolvia
+        /// "_positionLookup.Keys" directamente — una VISTA en vivo sobre el
+        /// diccionario, no una copia. Un llamador que enumera esa vista con un
+        /// "foreach" mientras otro hilo (o el mismo hilo, en una llamada
+        /// reentrante) modifica "_positionLookup" en simultaneo dispara
+        /// "InvalidOperationException: Collection was modified" — y aunque
+        /// todos los metodos de escritura de esta clase ya estan protegidos
+        /// con "lock (_lock)" arriba, ese lock NO cubre la enumeracion externa
+        /// que hace el llamador despues de que este metodo ya retorno. Se
+        /// devuelve una copia (snapshot) para que la enumeracion del llamador
+        /// sea segura sin importar que pase despues con el diccionario real.
+        /// </summary>
+        public List<Vector3i> GetAllPortalPositions()
         {
-            return _positionLookup.Keys;
+            lock (_lock)
+            {
+                return new List<Vector3i>(_positionLookup.Keys);
+            }
         }
     }
 }

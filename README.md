@@ -49,6 +49,20 @@ sección *Notas técnicas* más abajo.
    correctamente, verás en la consola (F1 o log del servidor) líneas con el
    prefijo `[PortalMod]`.
 
+**IMPORTANTE — servidor dedicado**: `Config/blocks.xml`, `items.xml`,
+`recipes.xml`, `buffs.xml` y `sounds.xml` agregan bloques/items/buffs/sonidos
+NUEVOS al juego (nuevos IDs en las tablas compartidas del juego). Estos
+archivos (y el DLL) **deben instalarse idénticos en el servidor Y en cada
+cliente que se conecte** — no es opcional ni algo que se pueda tener solo en
+un lado. Si el mod falta o difiere en el servidor, los clientes con el mod
+instalado probablemente sean rechazados/desconectados al intentar conectarse
+(mismatch de mods/checksums); si de alguna forma logran conectar igual, es
+posible que los bloques del portal se corrompan o se vean como bloques
+random del lado sin el mod. `Config/XUi_InGame/` es la única parte
+puramente client-side (define ventanas de UI), pero de todas formas se
+recomienda copiar la carpeta `PortalMod/` completa e idéntica a todos
+lados — no separar archivos "cliente" de "servidor" a mano.
+
 ## Compilación del DLL (Visual Studio 2022 / Rider)
 
 El proyecto está en `Harmony/PortalMod.csproj`. Ese archivo está en
@@ -150,6 +164,37 @@ Cada jugador gestiona su propio conjunto de portales de forma independiente
 (indexados internamente por su identificador de plataforma, "steamId"). Los
 portales de un jugador no interactúan con los de otro, incluso si usan el
 mismo tag.
+
+## Persistencia
+
+Los portales de cada jugador se guardan en un archivo de texto plano
+(`portals.dat`) dentro de la carpeta de guardado del mundo activo
+(`GameIO.GetSaveGameDir()`) — un archivo por mundo/slot de guardado, no
+compartido entre mundos distintos. Se guarda automáticamente:
+
+- Cada ~5 minutos si hubo cambios pendientes (autoguardado periódico).
+- Al cerrar el juego/servidor normalmente (`OnApplicationQuit`).
+
+La escritura es atómica (se escribe primero a un archivo temporal y recién
+al final se reemplaza el archivo real), para que un crash a mitad de la
+escritura no deje `portals.dat` corrupto. Aun así, ningún guardado cubre un
+crash duro del proceso (`kill -9`, corte de energía) que ocurra **entre**
+autoguardados — en ese caso se pierden los cambios de, como máximo, los
+últimos ~5 minutos.
+
+## Antes de desinstalar el mod
+
+Como cualquier mod que agrega bloques nuevos, **destruye/mina todos los
+portales que hayas colocado antes de quitar PortalMod** de tus mods. Si
+desinstalas el mod con portales todavía en el mundo, esos IDs de bloque
+quedan huérfanos en los datos de los chunks — el comportamiento exacto
+depende de la versión del juego (normalmente se ven como aire/bloque
+faltante, pero no está garantizado que sea así en todas las versiones), y no
+es algo que este mod pueda arreglar después del hecho una vez que ya no está
+instalado. Los datos propios del mod (`portals.dat`, ver sección
+*Persistencia* más arriba) no tocan el save nativo del juego y se pueden
+borrar sin riesgo — el problema real es únicamente los bloques ya colocados
+en el mundo.
 
 ## Notas técnicas — específicas de V3.0
 

@@ -28,6 +28,7 @@ portalHudDestinationMissing,xui,Windows,,,Destination not found — place anothe
 portalHudTargetLinked,xui,Windows,,,Portal: '{0}',Portal: '{0}',
 portalHudTargetOrphan,xui,Windows,,,Portal: '{0}' (no destination yet),Portal: '{0}' (sin destino aun),
 portalNoEnergy,xui,Windows,,,Portal has no power — connect a generator,Portal sin energía — conecta un generador,
+portalHudDestinationNotLoaded,xui,Windows,,,Destination area not loaded yet — try again in a moment,Área de destino aún no está cargada — intenta de nuevo en un momento,
 xuiPortalTagTitle,xui,Windows,,,Name Portal,Nombrar Portal,
 xuiPortalTagPlaceholder,xui,Windows,,,Enter portal tag...,Ingresa el tag del portal...,
 xuiPortalTagConfirm,xui,Windows,,,Confirm,Confirmar,

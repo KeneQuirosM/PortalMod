@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using UnityEngine;
 
@@ -213,20 +214,32 @@ namespace PortalMod
                     $"IsServer={ConnectionManager.Instance.IsServer} " +
                     $"portales={PortalManager.Instance.GetAllPortalPositions().Count()}");
 
+            // AUDITORIA (manejo de errores): GetAllPortalPositions() ya
+            // devuelve una copia (snapshot) segura para enumerar (ver FIX en
+            // PortalManager.cs). Cada posicion se procesa en su propio
+            // try/catch para que un portal puntual con datos raros no le
+            // quite el ambient tick al resto.
             foreach (var pos in PortalManager.Instance.GetAllPortalPositions())
             {
-                // Leer el estado de energia real (TileEntityPowered.IsPowered,
-                // ver PortalPower.cs) aqui es seguro: solo decide que
-                // particula disparar, nunca toca el BlockValue.
-                if (PortalManager.Instance.IsPositionActive(pos) && PortalPower.HasNearbyPower(pos))
+                try
                 {
-                    // Vinculado + con energia: particulas densas/rapidas cada tick.
-                    SpawnAmbientParticle(pos, intense: true);
+                    // Leer el estado de energia real (TileEntityPowered.IsPowered,
+                    // ver PortalPower.cs) aqui es seguro: solo decide que
+                    // particula disparar, nunca toca el BlockValue.
+                    if (PortalManager.Instance.IsPositionActive(pos) && PortalPower.HasNearbyPower(pos))
+                    {
+                        // Vinculado + con energia: particulas densas/rapidas cada tick.
+                        SpawnAmbientParticle(pos, intense: true);
+                    }
+                    else if (_ambientTickCount % OrphanParticleTickModulo == 0)
+                    {
+                        // Huerfano O sin energia: particulas escasas.
+                        SpawnAmbientParticle(pos, intense: false);
+                    }
                 }
-                else if (_ambientTickCount % OrphanParticleTickModulo == 0)
+                catch (Exception e)
                 {
-                    // Huerfano O sin energia: particulas escasas.
-                    SpawnAmbientParticle(pos, intense: false);
+                    API.LogError($"Excepcion en AmbientTick para portal en {pos}: {e}");
                 }
             }
         }

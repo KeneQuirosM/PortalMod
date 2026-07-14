@@ -167,13 +167,34 @@ namespace PortalMod
     /// mas frecuente de lo que "GameUpdate" probablemente disparaba; es seguro
     /// porque tanto PortalTeleport.Tick() como PortalVisualFX.AmbientTick() ya
     /// se auto-throttlean con Time.time internamente.
+    ///
+    /// AUDITORIA (manejo de errores): este Postfix se ejecuta DENTRO de
+    /// GameManager.Update(), el loop principal de Unity — corre para TODOS
+    /// los jugadores, en cada frame, tanto en cliente como en servidor
+    /// dedicado. Antes no tenia try/catch: una excepcion sin capturar en
+    /// CUALQUIER parte de PortalTeleport.Tick() (o de lo que llama —
+    /// PortalVisualFX.AmbientTick, PortalHoverFX.Tick, el chequeo de
+    /// colision por jugador) se propagaria hacia arriba a traves de
+    /// GameManager.Update() mismo, en vez de quedar contenida al mod. Se
+    /// agrega un try/catch de ultima instancia aqui — PortalTeleport.Tick()
+    /// y sus llamados internos YA tienen su propio try/catch mas granular
+    /// (por jugador, por portal) para no perder trabajo de mas de lo
+    /// necesario; este es solo la red de seguridad final para que, pase lo
+    /// que pase, GameManager.Update() nunca vea una excepcion salir de este mod.
     /// </summary>
     [HarmonyPatch(typeof(GameManager), "Update")]
     internal static class GameManager_Update_Patch
     {
         private static void Postfix()
         {
-            PortalTeleport.Tick();
+            try
+            {
+                PortalTeleport.Tick();
+            }
+            catch (Exception e)
+            {
+                API.LogError($"Excepcion sin capturar en PortalTeleport.Tick() (contenida aqui para no afectar GameManager.Update): {e}");
+            }
         }
     }
 
@@ -183,13 +204,27 @@ namespace PortalMod
     /// OnApplicationQuit es el callback estandar de Unity que GameManager
     /// sobrescribe para su propia logica de guardado-y-salida, por lo que es un
     /// punto de enganche estable para ejecutar nuestro propio guardado justo antes.
+    ///
+    /// AUDITORIA (manejo de errores): Save() ya tiene su propio try/catch
+    /// interno, pero se agrega uno aqui tambien — este Prefix corre ANTES de
+    /// la logica de cierre real de GameManager.OnApplicationQuit; si algo
+    /// fuera de Save() (por ejemplo la resolucion del singleton
+    /// PortalManager.Instance) fallara, no queremos bloquear el cierre
+    /// normal del juego/servidor.
     /// </summary>
     [HarmonyPatch(typeof(GameManager), "OnApplicationQuit")]
     internal static class GameManager_OnApplicationQuit_Patch
     {
         private static void Prefix()
         {
-            PortalManager.Instance.Save();
+            try
+            {
+                PortalManager.Instance.Save();
+            }
+            catch (Exception e)
+            {
+                API.LogError($"Excepcion sin capturar guardando portales al cerrar (contenida aqui para no bloquear el cierre del juego): {e}");
+            }
         }
     }
 }

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -43,14 +44,42 @@ namespace PortalMod
                 return;
             }
 
-            // Pulso de luz + particulas ambientales de todos los portales
-            // conocidos (auto-throttleado internamente, ver PortalVisualFX).
-            PortalVisualFX.AmbientTick();
+            // AUDITORIA (manejo de errores): cada sub-sistema se aisla en su
+            // propio try/catch. API.cs ya tiene una red de seguridad
+            // englobando TODO Tick(), pero sin aislamiento aqui adentro una
+            // excepcion en, por ejemplo, PortalHoverFX.Tick() (client-only,
+            // toca camara/UI) abortaria tambien el pulso ambiental de
+            // PortalVisualFX y el chequeo de colision de TODOS los
+            // jugadores para ese frame. Con el try/catch por sub-sistema,
+            // una falla en uno no le quita el tick a los demas.
+            try
+            {
+                // Pulso de luz + particulas ambientales de todos los portales
+                // conocidos (auto-throttleado internamente, ver PortalVisualFX).
+                PortalVisualFX.AmbientTick();
+            }
+            catch (Exception e)
+            {
+                API.LogError($"Excepcion en PortalVisualFX.AmbientTick(): {e}");
+            }
 
-            // Tooltip + texto flotante al apuntar a un portal con la mira
-            // (auto-throttleado internamente, ver PortalHoverFX). Solo afecta
-            // al jugador local de este cliente, no a la lista de jugadores.
-            PortalHoverFX.Tick(world);
+            try
+            {
+                // Tooltip + texto flotante al apuntar a un portal con la mira
+                // (auto-throttleado internamente, ver PortalHoverFX). Solo afecta
+                // al jugador local de este cliente, no a la lista de jugadores.
+                PortalHoverFX.Tick(world);
+            }
+            catch (Exception e)
+            {
+                API.LogError($"Excepcion en PortalHoverFX.Tick(): {e}");
+            }
+
+            // Autoguardado periodico (ver PortalManager.MaybeAutoSave): acota
+            // la ventana de perdida de datos ante un crash duro del proceso,
+            // ya que OnApplicationQuit nunca se ejecuta en ese caso. Save()
+            // ya tiene try/catch propio.
+            PortalManager.Instance.MaybeAutoSave();
 
             // TODO: verificar en Assembly-CSharp V3.0 el metodo correcto para
             // enumerar jugadores activos en el server/host. Candidatos conocidos
@@ -70,7 +99,17 @@ namespace PortalMod
                     continue;
                 }
 
-                CheckPlayerPortalCollision(player);
+                // Aislado por jugador: si un jugador puntual tiene datos raros
+                // (por ejemplo una posicion invalida) que hacen fallar el
+                // chequeo, el resto de los jugadores igual se revisan este frame.
+                try
+                {
+                    CheckPlayerPortalCollision(player);
+                }
+                catch (Exception e)
+                {
+                    API.LogError($"Excepcion revisando colision de portal para steamId={PortalIdentity.GetSteamId(player)}: {e}");
+                }
             }
         }
 
@@ -123,6 +162,23 @@ namespace PortalMod
             {
                 // Regla 6: portal huerfano — no ocurre teletransporte.
                 ShowOrphanMessageThrottled(player, steamId, tag);
+                return;
+            }
+
+            // AUDITORIA (chunk destino no cargado): un portal registrado
+            // puede estar en un chunk que el servidor/cliente ya descargo
+            // por distancia (streaming de chunks) — PortalManager.Load() ya
+            // asume esto como posible (ver PortalBlockCheck.Unknown) y NO
+            // descarta portales en chunks sin cargar. Teletransportar a
+            // ciegas a una posicion sin chunk cargado puede dejar al jugador
+            // cayendo en un area sin terreno/colisiones generadas todavia.
+            // World.IsChunkAreaLoaded ya esta confirmada y en uso real en
+            // PortalManager.CheckPortalBlockAt — se reutiliza aqui como
+            // chequeo previo al viaje.
+            var world = GameManager.Instance != null ? GameManager.Instance.World : null;
+            if (world == null || !world.IsChunkAreaLoaded(destinationBlockPos.x, destinationBlockPos.y, destinationBlockPos.z))
+            {
+                PortalHud.ShowDestinationNotLoadedMessage(player);
                 return;
             }
 
