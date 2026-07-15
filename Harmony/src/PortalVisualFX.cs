@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using UnityEngine;
 
 namespace PortalMod
@@ -92,7 +91,14 @@ namespace PortalMod
             Active
         }
 
-        private const float AmbientTickInterval = 0.6f;
+        // FIX real (spam de "[FX] AmbientTick" en el log — 500+ entradas por
+        // sesion incluso con 0 portales colocados): el intervalo real de
+        // 0.6s permitia mas de un tick por segundo. Se sube a 1.0s (limite
+        // pedido explicitamente: "no correr mas de una vez por segundo") y
+        // se agrega un early-exit por 0 portales en AmbientTick (ver mas
+        // abajo) para no hacer NINGUN trabajo (ni logging) cuando no hay
+        // portales colocados en el mundo.
+        private const float AmbientTickInterval = 1.0f;
         // Las particulas del estado huerfano/sin energia son "escasas": solo
         // se disparan 1 de cada N ticks ambientales para lograr el efecto
         // lento/en espera.
@@ -203,23 +209,25 @@ namespace PortalMod
             }
 
             _nextAmbientTick = Time.time + AmbientTickInterval;
-            _ambientTickCount++;
 
-            // DIAGNOSTICO TEMPORAL (particulas invisibles pese a no haber
-            // errores): confirmar en que contexto corre este tick —
-            // GameManager.IsDedicatedServer corta ParticleEffect.
-            // SpawnParticleEffect antes de instanciar nada visual (ver
-            // decompilacion citada en el chat). Quitar una vez diagnosticado.
-            API.Log($"[FX] AmbientTick — IsDedicatedServer={GameManager.IsDedicatedServer} " +
-                    $"IsServer={ConnectionManager.Instance.IsServer} " +
-                    $"portales={PortalManager.Instance.GetAllPortalPositions().Count()}");
+            // FIX real (spam de log — ver comentario en AmbientTickInterval):
+            // salir ANTES de tocar _ambientTickCount o loguear nada si no hay
+            // ningun portal colocado en el mundo (caso mas comun: mod recien
+            // instalado, o mundo sin portales aun).
+            var positions = PortalManager.Instance.GetAllPortalPositions();
+            if (positions.Count == 0)
+            {
+                return;
+            }
+
+            _ambientTickCount++;
 
             // AUDITORIA (manejo de errores): GetAllPortalPositions() ya
             // devuelve una copia (snapshot) segura para enumerar (ver FIX en
             // PortalManager.cs). Cada posicion se procesa en su propio
             // try/catch para que un portal puntual con datos raros no le
             // quite el ambient tick al resto.
-            foreach (var pos in PortalManager.Instance.GetAllPortalPositions())
+            foreach (var pos in positions)
             {
                 try
                 {
@@ -343,10 +351,6 @@ namespace PortalMod
             {
                 return;
             }
-
-            // DIAGNOSTICO TEMPORAL (ver nota en AmbientTick). Quitar una vez diagnosticado.
-            API.Log($"[FX] SpawnParticle — IsDedicatedServer={GameManager.IsDedicatedServer} " +
-                    $"particleName={particleName} pos={worldPos}");
 
             var effect = new ParticleEffect(particleName, worldPos, 0f, Color.white, null, null, _OLDCreateColliders: false);
             GameManager.Instance.SpawnParticleEffectServer(effect, -1, _forceCreation: false, _worldSpawn: true);
