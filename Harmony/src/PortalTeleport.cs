@@ -268,8 +268,12 @@ namespace PortalMod
             PortalVisualFX.SpawnTeleportBurst(originBlockPos);
 
             // Centrar al jugador frente al portal destino, con un pequeno offset
-            // vertical para no aparecer incrustado en el bloque.
-            var destination = new Vector3(destinationBlockPos.x + 0.5f, destinationBlockPos.y + 0.1f, destinationBlockPos.z + 0.5f);
+            // vertical para no aparecer incrustado en el bloque. FindLandingBlockPos
+            // (ver mas abajo) corrige la celda Y si hace falta (techo/estructura
+            // construida sobre el portal, ver FIX real ahi) — en el caso normal
+            // devuelve destinationBlockPos sin cambios.
+            var landingPos = FindLandingBlockPos(destinationBlockPos);
+            var destination = new Vector3(landingPos.x + 0.5f, landingPos.y + 0.1f, landingPos.z + 0.5f);
 
             // FIX real (usar la MISMA API que usa el juego para su propio
             // teletransporte, en vez de SetPosition a mano): confirmado por
@@ -299,6 +303,54 @@ namespace PortalMod
             ApplyTravelBuff(player);
 
             API.Log($"Teletransporte ejecutado: steamId={steamId} -> {destinationBlockPos}");
+        }
+
+        // FIX real (el jugador aparecia ENCIMA de un techo/estructura
+        // construida sobre el portal destino, en vez de dentro de el): la
+        // posicion de aterrizaje se calculaba siempre en destinationBlockPos.y
+        // sin verificar nada, confiando en que esa celda (el propio marco del
+        // portal, MultiBlockDim="1,2,1") estuviera libre. Si algo raro deja esa
+        // celda bloqueada, la correccion debe buscar espacio DESCENDIENDO
+        // desde el portal — nunca ascendiendo, que es lo que terminaba
+        // dejando al jugador arriba de cualquier techo/piso construido
+        // encima. "Pasable" usa la MISMA condicion real que usa el propio
+        // juego para decidir si una celda puede alojar algo (confirmado
+        // decompilando Block.MultiBlockArray.AddChilds: "blockValue.isair ||
+        // !blockValue.Block.shape.IsTerrain()") — el propio portalBlock
+        // (Shape="ModelEntity", no "Terrain") ya cuenta como pasable con
+        // esto, asi que en el caso normal (nada construido encima ni dentro)
+        // esto devuelve destinationBlockPos sin cambios, exactamente el
+        // comportamiento de antes de este fix.
+        private static Vector3i FindLandingBlockPos(Vector3i portalPos)
+        {
+            var world = GameManager.Instance != null ? GameManager.Instance.World : null;
+            if (world == null)
+            {
+                return portalPos;
+            }
+
+            const int maxScanDown = 32;
+            for (var dy = 0; dy >= -maxScanDown; dy--)
+            {
+                var feetPos = portalPos + new Vector3i(0, dy, 0);
+                var headPos = feetPos + new Vector3i(0, 1, 0);
+                if (IsPassable(world, feetPos) && IsPassable(world, headPos))
+                {
+                    return feetPos;
+                }
+            }
+
+            // No se encontro espacio libre en el rango escaneado: quedarse
+            // con la posicion original del portal (mismo comportamiento que
+            // antes de este fix) en vez de arriesgarse a subir por encima de
+            // una estructura.
+            return portalPos;
+        }
+
+        private static bool IsPassable(World world, Vector3i pos)
+        {
+            var blockValue = world.GetBlock(pos);
+            return blockValue.isair || !blockValue.Block.shape.IsTerrain();
         }
 
         private static void ApplyTravelBuff(EntityPlayer player)
