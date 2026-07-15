@@ -1157,6 +1157,32 @@ namespace PortalMod
                         // que "legacy" era el unico estilo que existia.
                         if (check == PortalBlockCheck.Present)
                         {
+                            // FIX real (Bug — portales viejos sin
+                            // TileEntityPowered pese a haber funcionado
+                            // antes, ver comentario detallado en
+                            // PortalPower.cs): portalBlock es
+                            // MultiBlockDim="1,2,1" y la celda HIJA reusa el
+                            // MISMO nombre de bloque que la madre (confirmado
+                            // decompilando Block.MultiBlockArray.AddChilds),
+                            // asi que CheckPortalBlockAt de arriba no puede
+                            // distinguirlas — solo la celda madre
+                            // (BlockValue.ischild == false) tiene el
+                            // TileEntity real. Si la posicion guardada
+                            // resulta ser la hija, se corrige aca de forma
+                            // PERMANENTE a la madre real (BlockValue.parent,
+                            // offset confirmado decompilando
+                            // Block.MultiBlockArray.GetParentPos) antes de
+                            // registrarla — asi PortalPower.HasNearbyPower ya
+                            // no necesita resolverla en cada chequeo.
+                            var blockValueAtPos = world.GetBlock(pos);
+                            if (blockValueAtPos.ischild)
+                            {
+                                var masterPos = pos + blockValueAtPos.parent;
+                                API.LogWarning($"[PortalMod] Portal cargado en {pos} apuntaba a la celda hija del multiblock — corrigiendo a la celda madre real {masterPos}.");
+                                pos = masterPos;
+                                _dirty = true;
+                            }
+
                             if (savedBiome == null)
                             {
                                 savedBiome = ResolveBiomeName(pos);
