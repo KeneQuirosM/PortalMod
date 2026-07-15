@@ -222,23 +222,26 @@ namespace PortalMod
                 return;
             }
 
-            // AUDITORIA (chunk destino no cargado): un portal registrado
-            // puede estar en un chunk que el servidor/cliente ya descargo
-            // por distancia (streaming de chunks) — PortalManager.Load() ya
-            // asume esto como posible (ver PortalBlockCheck.Unknown) y NO
-            // descarta portales en chunks sin cargar. Teletransportar a
-            // ciegas a una posicion sin chunk cargado puede dejar al jugador
-            // cayendo en un area sin terreno/colisiones generadas todavia.
-            // World.IsChunkAreaLoaded ya esta confirmada y en uso real en
-            // PortalManager.CheckPortalBlockAt — se reutiliza aqui como
-            // chequeo previo al viaje.
-            var world = GameManager.Instance != null ? GameManager.Instance.World : null;
-            if (world == null || !world.IsChunkAreaLoaded(destinationBlockPos.x, destinationBlockPos.y, destinationBlockPos.z))
-            {
-                PortalHud.ShowDestinationNotLoadedMessage(player);
-                return;
-            }
-
+            // FIX real (el teletransporte debia sentirse instantaneo, estilo
+            // Valheim — pedido explicito: "no delays, no buffs, no 'please
+            // wait'"): antes se bloqueaba el viaje con un mensaje si
+            // World.IsChunkAreaLoaded fallaba en el destino. Decompilando el
+            // propio mecanismo de teletransporte del juego
+            // (EntityPlayer.Teleport, usado por EntityPlayerLocal.
+            // TeleportToPosition para respawn/cama/etc.) se confirmo que
+            // VANILLA NO espera a que el chunk este cargado en absoluto: solo
+            // llama SetPosition(_pos) de inmediato y dispara
+            // Respawn(RespawnType.Teleport) — el streaming de chunks
+            // alrededor del jugador se encarga solo, despues, del pop-in
+            // (TeleportToPosition incluso relanza una correccion de altura
+            // en un coroutine que espera a "Spawned", no a que el chunk este
+            // cargado). No existe ningun "RequestQueuedChunk" en el
+            // Assembly-CSharp.dll real (se confirmo por reflection — 0
+            // coincidencias); el propio juego resuelve esto sin ninguna
+            // espera sincronica. Se elimina el bloqueo aca para igualar ese
+            // comportamiento: el viaje ya no se cancela por chunk sin
+            // cargar, se ejecuta siempre.
+            //
             // Feature "requiere electricidad": el portal de ORIGEN (el que el
             // jugador esta pisando/activando) necesita estar realmente
             // cableado a una fuente de energia encendida — portalBlock es
@@ -268,16 +271,23 @@ namespace PortalMod
             // vertical para no aparecer incrustado en el bloque.
             var destination = new Vector3(destinationBlockPos.x + 0.5f, destinationBlockPos.y + 0.1f, destinationBlockPos.z + 0.5f);
 
-            // TODO: verificar en Assembly-CSharp V3.0 la API correcta de
-            // teletransporte para EntityPlayer en servidor dedicado / multijugador.
-            // Candidatos conocidos de builds anteriores:
-            //   - player.SetPosition(Vector3, bool _bResetSpeed = true)  (cliente local)
-            //   - GameUtils.TeleportPlayer(ClientInfo _cInfo, Vector3 _pos, Vector3 _rot, World _world)
-            //   - EntityPlayerLocal.TeleportToPosition(...)
-            // Se usa SetPosition como fallback seguro porque existe en EntityAlive
-            // desde builds tempranas; en dedicado puede requerir enviar tambien
-            // un NetPackage al cliente para sincronizar camara/posicion visual.
-            player.SetPosition(destination, true);
+            // FIX real (usar la MISMA API que usa el juego para su propio
+            // teletransporte, en vez de SetPosition a mano): confirmado por
+            // decompilacion que EntityPlayer.Teleport(Vector3 _pos, float
+            // _dir = float.MinValue) es el metodo real y generico (existe en
+            // la clase base EntityPlayer, no solo en EntityPlayerLocal —
+            // funciona tanto en cliente como en servidor dedicado) que usa
+            // el propio juego para todo teletransporte real (respawn, cama,
+            // etc. pasan por aca via EntityPlayerLocal.TeleportToPosition).
+            // Su cuerpo real es "SetPosition(_pos); ...;
+            // Respawn(RespawnType.Teleport)" — hace lo mismo que
+            // SetPosition pero ademas dispara Respawn(RespawnType.Teleport),
+            // la misma señal que usa el juego para asentar al jugador
+            // despues de moverlo (limpieza de estado asociada, igual que en
+            // cualquier teletransporte vanilla). _dir se deja en su default
+            // (no cambiar la rotacion de camara del jugador al llegar, igual
+            // que el SetPosition anterior).
+            player.Teleport(destination);
 
             // Rafaga de particulas en el DESTINO, ademas de la que dispara
             // buffPortalTravel (onSelfBuffStart en buffs.xml) al aplicarse el

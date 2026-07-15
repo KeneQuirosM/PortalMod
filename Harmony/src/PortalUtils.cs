@@ -105,17 +105,5 @@ namespace PortalMod
         {
             ShowMessage(player, Localization.Get("portalNoEnergy"));
         }
-
-        /// <summary>
-        /// AUDITORIA (chunk destino no cargado — ver PortalTeleport.TryTeleport):
-        /// mensaje al intentar viajar a un portal cuyo chunk de destino
-        /// todavia no esta cargado en el mundo. En vez de mover al jugador a
-        /// ciegas hacia una zona sin terreno/colisiones generadas, se avisa y
-        /// se cancela el viaje.
-        /// </summary>
-        public static void ShowDestinationNotLoadedMessage(EntityPlayer player)
-        {
-            ShowMessage(player, Localization.Get("portalHudDestinationNotLoaded"));
-        }
     }
 }
