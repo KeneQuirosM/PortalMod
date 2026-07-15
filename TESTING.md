@@ -468,6 +468,30 @@ cada uno sigue sin probarse:
 - [ ] El teletransporte funciona en servidor dedicado (no solo en
       single-player/host).
 
+## 11.1 Pruebas de la auditoría de estabilidad (ver AUDIT.md)
+
+Ver `AUDIT.md` para el detalle completo de cada hallazgo y su corrección.
+Puntos concretos a probar en el juego real:
+
+- [ ] Crashear el proceso a la fuerza (`kill -9` / Administrador de tareas)
+      con portales sin guardar, esperar hasta 5 minutos, volver a matarlo, y
+      confirmar que se perdió como máximo el último autoguardado (no toda la
+      sesión).
+- [ ] Pegar un tag con un salto de línea (copiar texto multilínea al
+      portapapeles y pegarlo en el campo) y confirmar que no rompe
+      `portals.dat` en el siguiente guardado.
+- [ ] Intentar viajar a un portal en un chunk lejano recién cargado el mundo
+      (chunk probablemente descargado) y confirmar que aparece el mensaje
+      "Área de destino aún no está cargada" en vez de teletransportar a
+      ciegas.
+- [ ] Corromper manualmente una línea de `portals.dat` (editar a mano,
+      truncar un número) con el juego cerrado, volver a abrir, y confirmar
+      que solo esa línea se descarta (log con "Linea corrupta/invalida... se
+      salta") y el resto de los portales cargan normal.
+- [ ] Provocar intencionalmente un error en medio de una sesión (por ejemplo
+      con datos de mundo corruptos) y confirmar que el mod loguea el error
+      con `API.LogError` en vez de crashear el proceso o congelar el juego.
+
 ## Cómo reportar un bug
 
 Incluir en el reporte:

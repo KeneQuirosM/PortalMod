@@ -1,4 +1,4 @@
-using System.Linq;
+using System;
 using UnityEngine;
 
 namespace PortalMod
@@ -91,7 +91,14 @@ namespace PortalMod
             Active
         }
 
-        private const float AmbientTickInterval = 0.6f;
+        // FIX real (spam de "[FX] AmbientTick" en el log — 500+ entradas por
+        // sesion incluso con 0 portales colocados): el intervalo real de
+        // 0.6s permitia mas de un tick por segundo. Se sube a 1.0s (limite
+        // pedido explicitamente: "no correr mas de una vez por segundo") y
+        // se agrega un early-exit por 0 portales en AmbientTick (ver mas
+        // abajo) para no hacer NINGUN trabajo (ni logging) cuando no hay
+        // portales colocados en el mundo.
+        private const float AmbientTickInterval = 1.0f;
         // Las particulas del estado huerfano/sin energia son "escasas": solo
         // se disparan 1 de cada N ticks ambientales para lograr el efecto
         // lento/en espera.
@@ -144,6 +151,30 @@ namespace PortalMod
                 return;
             }
 
+            // TODO: verificar en Assembly-CSharp V3.0 el metodo correcto para
+            // leer el bloque actual en una posicion. Candidato de builds
+            // anteriores: World.GetBlock(Vector3i).
+            var currentBv = world.GetBlock(pos);
+
+            // FIX real (bug: los 6 estilos de portal siempre mostraban el
+            // modelo "legacy"): defensa adicional ademas del FIX real en
+            // Block_OnBlockPlaceBefore_Patch/PortalManager.RegisterPortal
+            // (que ahora resuelven y guardan el estilo correcto desde el
+            // momento de la colocacion). Si por algun motivo igual llega aca
+            // sin estilo (style null/vacio — por ejemplo un portal cargado
+            // desde un portals.dat viejo sin ese dato, ver Load()), NO
+            // asumir directamente "legacy": primero intentar inferirlo del
+            // bloque que YA esta fisicamente en esta posicion (si es un
+            // inactivo de estilo reconocido, GetStyleFromInactiveBlockName lo
+            // encuentra). Esto evita downgradear a legacy un portal que en
+            // realidad SI tiene un estilo valido colocado, y solo cae al
+            // fallback real de "legacy" cuando de verdad no hay forma de
+            // saberlo.
+            if (string.IsNullOrEmpty(style))
+            {
+                style = PortalBiomes.GetStyleFromInactiveBlockName(currentBv.Block?.GetBlockName());
+            }
+
             var targetName = state == BlockState.Inactive
                 ? PortalBiomes.GetInactiveBlockName(style)
                 : PortalBiomes.GetActiveBlockName(style, biome);
@@ -164,10 +195,6 @@ namespace PortalMod
                 return;
             }
 
-            // TODO: verificar en Assembly-CSharp V3.0 el metodo correcto para
-            // leer el bloque actual en una posicion. Candidato de builds
-            // anteriores: World.GetBlock(Vector3i).
-            var currentBv = world.GetBlock(pos);
             API.Log($"[PortalMod] SetBlockState pos={pos} bloqueActual={currentBv.Block?.GetBlockName()} bloqueObjetivo={targetName}");
             if (currentBv.Block == targetBlock)
             {
@@ -202,31 +229,45 @@ namespace PortalMod
             }
 
             _nextAmbientTick = Time.time + AmbientTickInterval;
+
+            // FIX real (spam de log — ver comentario en AmbientTickInterval):
+            // salir ANTES de tocar _ambientTickCount o loguear nada si no hay
+            // ningun portal colocado en el mundo (caso mas comun: mod recien
+            // instalado, o mundo sin portales aun).
+            var positions = PortalManager.Instance.GetAllPortalPositions();
+            if (positions.Count == 0)
+            {
+                return;
+            }
+
             _ambientTickCount++;
 
-            // DIAGNOSTICO TEMPORAL (particulas invisibles pese a no haber
-            // errores): confirmar en que contexto corre este tick —
-            // GameManager.IsDedicatedServer corta ParticleEffect.
-            // SpawnParticleEffect antes de instanciar nada visual (ver
-            // decompilacion citada en el chat). Quitar una vez diagnosticado.
-            API.Log($"[FX] AmbientTick — IsDedicatedServer={GameManager.IsDedicatedServer} " +
-                    $"IsServer={ConnectionManager.Instance.IsServer} " +
-                    $"portales={PortalManager.Instance.GetAllPortalPositions().Count()}");
-
-            foreach (var pos in PortalManager.Instance.GetAllPortalPositions())
+            // AUDITORIA (manejo de errores): GetAllPortalPositions() ya
+            // devuelve una copia (snapshot) segura para enumerar (ver FIX en
+            // PortalManager.cs). Cada posicion se procesa en su propio
+            // try/catch para que un portal puntual con datos raros no le
+            // quite el ambient tick al resto.
+            foreach (var pos in positions)
             {
-                // Leer el estado de energia real (TileEntityPowered.IsPowered,
-                // ver PortalPower.cs) aqui es seguro: solo decide que
-                // particula disparar, nunca toca el BlockValue.
-                if (PortalManager.Instance.IsPositionActive(pos) && PortalPower.HasNearbyPower(pos))
+                try
                 {
-                    // Vinculado + con energia: particulas densas/rapidas cada tick.
-                    SpawnAmbientParticle(pos, intense: true);
+                    // Leer el estado de energia real (TileEntityPowered.IsPowered,
+                    // ver PortalPower.cs) aqui es seguro: solo decide que
+                    // particula disparar, nunca toca el BlockValue.
+                    if (PortalManager.Instance.IsPositionActive(pos) && PortalPower.HasNearbyPower(pos))
+                    {
+                        // Vinculado + con energia: particulas densas/rapidas cada tick.
+                        SpawnAmbientParticle(pos, intense: true);
+                    }
+                    else if (_ambientTickCount % OrphanParticleTickModulo == 0)
+                    {
+                        // Huerfano O sin energia: particulas escasas.
+                        SpawnAmbientParticle(pos, intense: false);
+                    }
                 }
-                else if (_ambientTickCount % OrphanParticleTickModulo == 0)
+                catch (Exception e)
                 {
-                    // Huerfano O sin energia: particulas escasas.
-                    SpawnAmbientParticle(pos, intense: false);
+                    API.LogError($"Excepcion en AmbientTick para portal en {pos}: {e}");
                 }
             }
         }
@@ -330,10 +371,6 @@ namespace PortalMod
             {
                 return;
             }
-
-            // DIAGNOSTICO TEMPORAL (ver nota en AmbientTick). Quitar una vez diagnosticado.
-            API.Log($"[FX] SpawnParticle — IsDedicatedServer={GameManager.IsDedicatedServer} " +
-                    $"particleName={particleName} pos={worldPos}");
 
             var effect = new ParticleEffect(particleName, worldPos, 0f, Color.white, null, null, _OLDCreateColliders: false);
             GameManager.Instance.SpawnParticleEffectServer(effect, -1, _forceCreation: false, _worldSpawn: true);

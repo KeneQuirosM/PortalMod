@@ -76,8 +76,17 @@ namespace PortalMod
             {
                 // El bloque existe en el mundo pero aun no fue registrado
                 // (por ejemplo si el jugador cerro la ventana sin confirmar
-                // al colocarlo): permitir asignarle un tag ahora.
-                XUiPortalTag.OpenForNewPortal(player, blockPos);
+                // al colocarlo): permitir asignarle un tag ahora. A
+                // diferencia de Block_OnBlockPlaceBefore_Patch (donde el
+                // estilo se resuelve del Block recien colocado, ver FIX real
+                // ahi), aca es seguro leer el bloque directo del mundo: para
+                // llegar a esta rama el jugador tuvo que activarlo (tecla E)
+                // sobre un bloque que ya lleva un rato colocado y estable, sin
+                // el riesgo de timing de una colocacion recien iniciada.
+                var world = GameManager.Instance != null ? GameManager.Instance.World : null;
+                var currentBlock = world?.GetBlock(blockPos).Block;
+                var style = currentBlock != null ? PortalBiomes.GetStyleFromInactiveBlockName(currentBlock.GetBlockName()) : null;
+                XUiPortalTag.OpenForNewPortal(player, blockPos, style);
             }
         }
     }
@@ -106,29 +115,64 @@ namespace PortalMod
         // abrirse sin que el bloque exista, mover esta logica a un hook que
         // corra DESPUES de la colocacion real (candidato: Block.OnBlockAdded,
         // pendiente de confirmar su firma tambien contra el DLL real).
+        // AUDITORIA (manejo de errores): "OnBlockPlaceBefore" del juego base
+        // se ejecuta para TODA colocacion de TODO bloque, no solo portales —
+        // una excepcion sin capturar aqui interrumpiria el flujo normal de
+        // colocacion de cualquier bloque del juego para el jugador que la
+        // disparo. Se envuelve todo el cuerpo en try/catch.
         private static void Postfix(Block __instance, ref BlockPlacement.Result _bpResult, EntityAlive _ea)
         {
-            var isPortalBlock = PortalBlockPatch.IsPortalBlock(__instance);
-            API.Log("[PortalMod] OnBlockPlaceBefore Postfix - bloque: " + __instance?.GetBlockName() + " esPortalBlock: " + isPortalBlock);
-
-            if (!isPortalBlock)
+            try
             {
-                return;
-            }
+                var isPortalBlock = PortalBlockPatch.IsPortalBlock(__instance);
+                API.Log("[PortalMod] OnBlockPlaceBefore Postfix - bloque: " + __instance?.GetBlockName() + " esPortalBlock: " + isPortalBlock);
 
-            var player = _ea as EntityPlayer;
-            if (player == null)
+                if (!isPortalBlock)
+                {
+                    return;
+                }
+
+                var player = _ea as EntityPlayer;
+                if (player == null)
+                {
+                    return;
+                }
+
+                var blockPos = _bpResult.blockPos;
+
+                // FIX real (bug: los 6 estilos de portal siempre mostraban el
+                // modelo "legacy" sin importar el item usado): antes el estilo
+                // se resolvia recien en PortalManager.RegisterPortal, leyendo
+                // world.GetBlock(pos) en el momento en que el jugador confirma
+                // el tag (Confirm(), en XUiPortalTag) — potencialmente varios
+                // frames despues de este Postfix (ver TODO arriba: "Before" no
+                // garantiza que el bloque ya este realmente en el mundo). Si
+                // ese re-lectura ocurria antes de que la colocacion terminara
+                // de propagarse, world.GetBlock(pos) devolvia otra cosa (aire
+                // u otro bloque), el estilo resolvia a null, y
+                // PortalVisualFX.RefreshBlockState (llamado igual, para dejar
+                // el portal recien colocado en estado "huerfano") terminaba
+                // SOBRESCRIBIENDO el bloque recien colocado por la variante
+                // inactiva LEGACY (el fallback de PortalBiomes cuando no hay
+                // estilo) — de ahi que TODOS los estilos terminaran viendose
+                // iguales (siempre el legacy). Aca, en cambio, "__instance" ES
+                // el Block real que el juego esta colocando (confirmado por
+                // este mismo log de arriba) — se resuelve el estilo AHORA,
+                // cuando es 100% confiable, y se lo pasa a traves de
+                // OpenForNewPortal/RegisterPortal en vez de re-derivarlo mas
+                // tarde desde el estado del mundo.
+                var knownStyle = PortalBiomes.GetStyleFromInactiveBlockName(__instance.GetBlockName());
+                API.Log($"portalBlock colocado en {blockPos} por {PortalIdentity.GetSteamId(player)} (estilo detectado: {knownStyle ?? "(ninguno, usara fallback)"}). Abriendo ventana de nombre de tag.");
+
+                // El bloque todavia no esta registrado en PortalManager: se registra
+                // recien cuando el jugador confirma un tag en la ventana (ver XUiPortalTag).
+                API.Log("[PortalMod] Llamando a XUiPortalTag.OpenForNewPortal...");
+                XUiPortalTag.OpenForNewPortal(player, blockPos, knownStyle);
+            }
+            catch (Exception e)
             {
-                return;
+                API.LogError($"Excepcion en Block_OnBlockPlaceBefore_Patch.Postfix: {e}");
             }
-
-            var blockPos = _bpResult.blockPos;
-            API.Log($"portalBlock colocado en {blockPos} por {PortalIdentity.GetSteamId(player)}. Abriendo ventana de nombre de tag.");
-
-            // El bloque todavia no esta registrado en PortalManager: se registra
-            // recien cuando el jugador confirma un tag en la ventana (ver XUiPortalTag).
-            API.Log("[PortalMod] Llamando a XUiPortalTag.OpenForNewPortal...");
-            XUiPortalTag.OpenForNewPortal(player, blockPos);
         }
     }
 
@@ -152,28 +196,44 @@ namespace PortalMod
         new Type[] { typeof(WorldBase), typeof(Vector3i), typeof(BlockValue), typeof(EntityPlayerLocal) })]
     internal static class Block_OnBlockActivated_Patch
     {
+        // AUDITORIA (manejo de errores): este Prefix intercepta la
+        // activacion (tecla E) de TODOS los bloques del juego que pasan por
+        // esta sobrecarga de Block.OnBlockActivated, no solo portales. Si
+        // "IsPortalBlock" o cualquier logica de abajo lanzara una excepcion
+        // sin capturar, romperia la interaccion con CUALQUIER bloque
+        // activable del juego para ese jugador (no solo portales). Ante un
+        // error se devuelve "true" (dejar que el juego procese la
+        // activacion normalmente), el fallback mas seguro/menos sorpresivo.
         private static bool Prefix(WorldBase _world, Vector3i _blockPos, BlockValue _blockValue,
             EntityPlayerLocal _player, ref bool __result)
         {
-            if (!PortalBlockPatch.IsPortalBlock(_blockValue))
+            try
             {
-                // No es un portal: dejar que el juego procese la activacion normalmente.
-                return true;
-            }
+                if (!PortalBlockPatch.IsPortalBlock(_blockValue))
+                {
+                    // No es un portal: dejar que el juego procese la activacion normalmente.
+                    return true;
+                }
 
-            var player = _player as EntityPlayer;
-            if (player == null)
-            {
-                __result = false;
+                var player = _player as EntityPlayer;
+                if (player == null)
+                {
+                    __result = false;
+                    return false;
+                }
+
+                PortalBlockPatch.HandlePortalActivation(player, _blockPos);
+
+                __result = true;
+                // Evita que el motor ejecute cualquier logica de activacion por
+                // defecto asociada a la clase base Block para este bloque.
                 return false;
             }
-
-            PortalBlockPatch.HandlePortalActivation(player, _blockPos);
-
-            __result = true;
-            // Evita que el motor ejecute cualquier logica de activacion por
-            // defecto asociada a la clase base Block para este bloque.
-            return false;
+            catch (Exception e)
+            {
+                API.LogError($"Excepcion en Block_OnBlockActivated_Patch.Prefix: {e}");
+                return true;
+            }
         }
     }
 
@@ -202,18 +262,36 @@ namespace PortalMod
     //   - Redirigir cualquier activacion CON comando que igual le llegue a
     //     portalBlock hacia la misma logica de nombrar/renombrar.
     // ============================================================================
+    // AUDITORIA (manejo de errores — radio de impacto amplio): estos dos
+    // patches interceptan metodos de la clase BASE "BlockPowered", que
+    // TODOS los bloques electricos del juego heredan (generadores, cercas
+    // electricas, torretas, luces, etc.), no solo portalBlock. Sin
+    // try/catch, una excepcion sin capturar aca podria romper la
+    // interaccion/activacion de CUALQUIER bloque electrico del juego para
+    // el jugador que la disparo, mucho mas alla de este mod. El chequeo
+    // "IsPortalBlock" ya filtra al inicio, pero se envuelve todo en
+    // try/catch de todas formas como red de seguridad final dado el radio
+    // de impacto.
     [HarmonyPatch(typeof(BlockPowered), "HasBlockActivationCommands")]
     internal static class BlockPowered_HasBlockActivationCommands_Patch
     {
         private static bool Prefix(BlockValue _blockValue, ref bool __result)
         {
-            if (!PortalBlockPatch.IsPortalBlock(_blockValue))
+            try
             {
+                if (!PortalBlockPatch.IsPortalBlock(_blockValue))
+                {
+                    return true;
+                }
+
+                __result = false;
+                return false;
+            }
+            catch (Exception e)
+            {
+                API.LogError($"Excepcion en BlockPowered_HasBlockActivationCommands_Patch.Prefix: {e}");
                 return true;
             }
-
-            __result = false;
-            return false;
         }
     }
 
@@ -224,22 +302,30 @@ namespace PortalMod
         private static bool Prefix(WorldBase _world, Vector3i _blockPos, BlockValue _blockValue,
             EntityPlayerLocal _player, ref bool __result)
         {
-            if (!PortalBlockPatch.IsPortalBlock(_blockValue))
+            try
             {
-                return true;
-            }
+                if (!PortalBlockPatch.IsPortalBlock(_blockValue))
+                {
+                    return true;
+                }
 
-            var player = _player as EntityPlayer;
-            if (player == null)
-            {
-                __result = false;
+                var player = _player as EntityPlayer;
+                if (player == null)
+                {
+                    __result = false;
+                    return false;
+                }
+
+                PortalBlockPatch.HandlePortalActivation(player, _blockPos);
+
+                __result = true;
                 return false;
             }
-
-            PortalBlockPatch.HandlePortalActivation(player, _blockPos);
-
-            __result = true;
-            return false;
+            catch (Exception e)
+            {
+                API.LogError($"Excepcion en BlockPowered_OnBlockActivated_Patch.Prefix: {e}");
+                return true;
+            }
         }
     }
 
@@ -271,19 +357,28 @@ namespace PortalMod
     [HarmonyPatch(typeof(Block), "OnBlockDestroyedBy")]
     internal static class Block_OnBlockDestroyedBy_Patch
     {
+        // AUDITORIA (manejo de errores): "OnBlockDestroyedBy" corre para la
+        // destruccion de TODO bloque del juego, no solo portales.
         private static void Postfix(WorldBase _world, BlockValueRef _bvRef, BlockValue _blockValue)
         {
-            if (!PortalBlockPatch.IsPortalBlock(_blockValue))
+            try
             {
-                return;
+                if (!PortalBlockPatch.IsPortalBlock(_blockValue))
+                {
+                    return;
+                }
+
+                var blockPos = _bvRef.ToBlockPos(_world);
+
+                if (PortalManager.Instance.TryGetPortalRef(blockPos, out var portalRef))
+                {
+                    PortalManager.Instance.UnregisterPortal(portalRef.OwnerKey, blockPos);
+                    API.Log($"portalBlock destruido en {blockPos}, desregistrado (tag='{portalRef.Tag}').");
+                }
             }
-
-            var blockPos = _bvRef.ToBlockPos(_world);
-
-            if (PortalManager.Instance.TryGetPortalRef(blockPos, out var portalRef))
+            catch (Exception e)
             {
-                PortalManager.Instance.UnregisterPortal(portalRef.SteamId, blockPos);
-                API.Log($"portalBlock destruido en {blockPos}, desregistrado (tag='{portalRef.Tag}').");
+                API.LogError($"Excepcion en Block_OnBlockDestroyedBy_Patch.Postfix: {e}");
             }
         }
     }
@@ -330,30 +425,43 @@ namespace PortalMod
     [HarmonyPatch(typeof(Block), "OnBlockEntityTransformAfterActivated")]
     internal static class Block_OnBlockEntityTransformAfterActivated_Patch
     {
+        // AUDITORIA (manejo de errores — radio de impacto amplio): este hook
+        // corre por CADA BlockEntityData que se activa visualmente en CADA
+        // chunk visible del juego (no solo portales) — es uno de los mas
+        // "calientes" de todo el mod en frecuencia. Una excepcion sin
+        // capturar aca podria interrumpir el renderizado/activacion de
+        // otros bloques en el mismo chunk.
         private static void Postfix(BlockValue _blockValue, BlockEntityData _ebcd)
         {
-            if (GameManager.IsDedicatedServer)
+            try
             {
-                return;
-            }
-
-            if (!PortalBlockPatch.IsPortalBlock(_blockValue))
-            {
-                return;
-            }
-
-            var modelTransform = _ebcd?.transform;
-            if (modelTransform == null)
-            {
-                return;
-            }
-
-            foreach (var ps in modelTransform.GetComponentsInChildren<ParticleSystem>(true))
-            {
-                if (!ps.isPlaying)
+                if (GameManager.IsDedicatedServer)
                 {
-                    ps.Play();
+                    return;
                 }
+
+                if (!PortalBlockPatch.IsPortalBlock(_blockValue))
+                {
+                    return;
+                }
+
+                var modelTransform = _ebcd?.transform;
+                if (modelTransform == null)
+                {
+                    return;
+                }
+
+                foreach (var ps in modelTransform.GetComponentsInChildren<ParticleSystem>(true))
+                {
+                    if (!ps.isPlaying)
+                    {
+                        ps.Play();
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                API.LogError($"Excepcion en Block_OnBlockEntityTransformAfterActivated_Patch.Postfix: {e}");
             }
         }
     }

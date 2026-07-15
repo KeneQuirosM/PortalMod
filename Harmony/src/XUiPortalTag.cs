@@ -42,6 +42,16 @@ namespace PortalMod
         private static EntityPlayer _pendingPlayer;
         private static string _pendingCurrentTag;
 
+        // Estilo del portal (Feature "Opcion A: 6 items separados"), resuelto
+        // por PortalBlockPatch en el momento de la colocacion real (ver FIX
+        // real en Block_OnBlockPlaceBefore_Patch) y llevado hasta aca para
+        // pasarselo directo a RegisterPortal — evita que PortalManager tenga
+        // que re-derivarlo mas tarde leyendo el bloque del mundo, lectura que
+        // puede correr antes de que la colocacion haya terminado de
+        // propagarse. Null para el modo Rename (no aplica: el portal ya
+        // existe y ya tiene un estilo guardado).
+        private static string _pendingStyle;
+
         private XUiC_TextInput _tagInput;
         private bool _buttonsWired;
 
@@ -121,13 +131,14 @@ namespace PortalMod
             WireButtons();
         }
 
-        /// <summary>Abre la ventana para asignar tag a un portal recien colocado.</summary>
-        public static void OpenForNewPortal(EntityPlayer player, Vector3i blockPos)
+        /// <summary>Abre la ventana para asignar tag a un portal recien colocado. "style" viene ya resuelto desde el momento de la colocacion (ver Block_OnBlockPlaceBefore_Patch) — puede ser null si no se reconocio ningun estilo conocido.</summary>
+        public static void OpenForNewPortal(EntityPlayer player, Vector3i blockPos, string style)
         {
             _pendingMode = Mode.NewPortal;
             _pendingPlayer = player;
             _pendingBlockPos = blockPos;
             _pendingCurrentTag = string.Empty;
+            _pendingStyle = style;
             OpenWindow(player);
         }
 
@@ -138,6 +149,7 @@ namespace PortalMod
             _pendingPlayer = player;
             _pendingBlockPos = blockPos;
             _pendingCurrentTag = currentTag;
+            _pendingStyle = null;
             OpenWindow(player);
         }
 
@@ -236,46 +248,76 @@ namespace PortalMod
 
         // Invocado desde el boton "confirmButton" (<simplebutton> en
         // windows.xml) via el OnPressed conectado en WireButtons().
+        // AUDITORIA (manejo de errores): este metodo lo invoca directamente
+        // un callback de click de UI (OnPressed, ver WireButtons) — una
+        // excepcion sin capturar aca no tiene ningun try/catch "de arriba"
+        // que la contenga (a diferencia de la logica de PortalTeleport.Tick,
+        // que ahora si esta protegida en varias capas), asi que se envuelve
+        // todo el cuerpo.
         public void Confirm()
         {
-            API.Log("[PortalMod] Confirm() ejecutado - tag: " + (_tagInput != null ? _tagInput.Text : "null"));
-
-            var tag = _tagInput != null ? _tagInput.Text?.Trim() : null;
-
-            if (string.IsNullOrEmpty(tag))
+            try
             {
-                PortalHud.ShowEmptyTagMessage(_pendingPlayer);
-                return;
-            }
+                API.Log("[PortalMod] Confirm() ejecutado - tag: " + (_tagInput != null ? _tagInput.Text : "null"));
 
-            var steamId = PortalIdentity.GetSteamId(_pendingPlayer);
-            var result = _pendingMode == Mode.NewPortal
-                ? PortalManager.Instance.RegisterPortal(steamId, tag, _pendingBlockPos)
-                : PortalManager.Instance.RenamePortal(steamId, _pendingBlockPos, tag);
+                // "_pendingPlayer" es un campo ESTATICO (ver comentario
+                // arriba) que se llena en OpenForNewPortal/OpenForRename y se
+                // lee aca, potencialmente frames/segundos despues (mientras
+                // el jugador escribe el tag). Si el jugador se desconecta con
+                // la ventana abierta, o el objeto Unity subyacente ya fue
+                // destruido, "_pendingPlayer" puede quedar null (el operador
+                // == de UnityEngine.Object trata los objetos destruidos como
+                // null). Sin este chequeo, PortalIdentity.GetSteamId(null)
+                // devuelve null, y PortalManager.RegisterPortal/RenamePortal
+                // terminan llamando Dictionary.TryGetValue(null, ...) — eso
+                // lanza ArgumentNullException.
+                if (_pendingPlayer == null)
+                {
+                    API.LogWarning("Confirm() llamado sin un jugador pendiente valido (_pendingPlayer es null, probablemente se desconecto); cerrando ventana sin registrar.");
+                    CloseWindow();
+                    return;
+                }
 
-            switch (result)
-            {
-                case PortalManager.RegisterResult.Success:
-                    PortalHud.ShowActiveMessage(_pendingPlayer, tag);
-                    break;
-                case PortalManager.RegisterResult.SuccessOrphan:
-                    PortalHud.ShowOrphanMessage(_pendingPlayer, tag);
-                    break;
-                case PortalManager.RegisterResult.TagFull:
-                    // Regla 5: no permitir un tercer portal con el mismo tag.
-                    PortalHud.ShowTagInUseMessage(_pendingPlayer);
-                    return; // No cerrar la ventana: dejar que el jugador corrija el tag.
-                case PortalManager.RegisterResult.EmptyTag:
+                var tag = _tagInput != null ? _tagInput.Text?.Trim() : null;
+
+                if (string.IsNullOrEmpty(tag))
+                {
                     PortalHud.ShowEmptyTagMessage(_pendingPlayer);
                     return;
-            }
+                }
 
-            if (_pendingMode == Mode.Rename && result != PortalManager.RegisterResult.TagFull)
+                var result = _pendingMode == Mode.NewPortal
+                    ? PortalManager.Instance.RegisterPortal(_pendingPlayer, tag, _pendingBlockPos, _pendingStyle)
+                    : PortalManager.Instance.RenamePortal(_pendingPlayer, _pendingBlockPos, tag);
+
+                switch (result)
+                {
+                    case PortalManager.RegisterResult.Success:
+                        PortalHud.ShowActiveMessage(_pendingPlayer, tag);
+                        break;
+                    case PortalManager.RegisterResult.SuccessOrphan:
+                        PortalHud.ShowOrphanMessage(_pendingPlayer, tag);
+                        break;
+                    case PortalManager.RegisterResult.TagFull:
+                        // Regla 5: no permitir un tercer portal con el mismo tag.
+                        PortalHud.ShowTagInUseMessage(_pendingPlayer);
+                        return; // No cerrar la ventana: dejar que el jugador corrija el tag.
+                    case PortalManager.RegisterResult.EmptyTag:
+                        PortalHud.ShowEmptyTagMessage(_pendingPlayer);
+                        return;
+                }
+
+                if (_pendingMode == Mode.Rename && result != PortalManager.RegisterResult.TagFull)
+                {
+                    PortalHud.ShowRenamedMessage(_pendingPlayer, tag);
+                }
+
+                CloseWindow();
+            }
+            catch (Exception e)
             {
-                PortalHud.ShowRenamedMessage(_pendingPlayer, tag);
+                API.LogError($"Excepcion en XUiPortalTag.Confirm(): {e}");
             }
-
-            CloseWindow();
         }
 
         // Invocado desde el boton "cancelButton" via el OnPressed conectado en WireButtons().
