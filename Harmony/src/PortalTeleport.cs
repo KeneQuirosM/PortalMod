@@ -30,6 +30,27 @@ namespace PortalMod
         private static readonly Dictionary<string, float> _lastNoPowerMessageTime = new Dictionary<string, float>();
         private const float NoPowerMessageThrottleSeconds = 3f;
 
+        // FIX real (Bug 1 — lag desde que se agrego el sistema de party):
+        // CheckPlayerPortalCollision corre una vez por FRAME por cada
+        // jugador (ver Tick() mas abajo, sin throttle propio), y llamaba a
+        // PortalManager.CheckPartyMembershipChanged() en cada una de esas
+        // pasadas pese a que el comentario original decia "throttleado
+        // internamente" — CheckPartyMembershipChanged en si NO throttlea por
+        // tiempo, solo compara claves ya resueltas. La resolucion de esa
+        // clave (GetPortalKey -> PortalParty.TryGetPartyId) puede terminar en
+        // PortalParty.TryGetPartyIdFromStaticManager, que hace
+        // AppDomain.CurrentDomain.GetAssemblies().Select(a => a.GetTypes())
+        // — reflejar TODOS los tipos de TODOS los ensamblados cargados del
+        // proceso — por cada uno de sus 3 candidatos de nombre. Repetir eso
+        // en cada frame por cada jugador conectado es exactamente el tipo de
+        // costo que puede generar el lag reportado. Se agrega aqui el mismo
+        // patron de throttle por steamId que ya usan los mensajes de arriba
+        // (ver tambien el cacheo de resultados dentro de PortalParty.cs, que
+        // ataca la otra mitad del problema: el costo de CADA llamada
+        // individual, no solo su frecuencia).
+        private static readonly Dictionary<string, float> _lastPartyCheckTime = new Dictionary<string, float>();
+        private const float PartyCheckThrottleSeconds = 5f;
+
         public static void Init()
         {
             API.Log("PortalTeleport inicializado.");
@@ -123,11 +144,21 @@ namespace PortalMod
 
             // Feature "portales por party": detecta si la party del jugador
             // cambio desde la ultima revision y migra sus portales
-            // automaticamente si hace falta (throttleado internamente por
-            // steamId — ver PortalManager.CheckPartyMembershipChanged). Se
-            // llama ANTES del chequeo de cooldown a proposito, para que la
-            // migracion siga funcionando aunque el jugador este en cooldown.
-            PortalManager.Instance.CheckPartyMembershipChanged(player);
+            // automaticamente si hace falta. Se llama ANTES del chequeo de
+            // cooldown a proposito, para que la migracion siga funcionando
+            // aunque el jugador este en cooldown.
+            //
+            // FIX real (Bug 1 — lag, ver comentario en _lastPartyCheckTime
+            // arriba): CheckPartyMembershipChanged NO throttlea por tiempo
+            // internamente pese a lo que decia este comentario antes — el
+            // throttle real se agrega aca, con el mismo patron que
+            // _lastOrphanMessageTime/_lastNoPowerMessageTime.
+            if (!_lastPartyCheckTime.TryGetValue(steamId, out var lastPartyCheck) ||
+                Time.time - lastPartyCheck >= PartyCheckThrottleSeconds)
+            {
+                _lastPartyCheckTime[steamId] = Time.time;
+                PortalManager.Instance.CheckPartyMembershipChanged(player);
+            }
 
             // Un jugador recien teletransportado no puede volver a activar un
             // portal hasta que expire el cooldown (regla 7 — evita loops).

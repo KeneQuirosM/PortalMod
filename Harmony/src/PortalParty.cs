@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 
@@ -62,6 +63,25 @@ namespace PortalMod
             "PartyManager", "GroupManager", "TeamManager"
         };
 
+        // FIX real (Bug 1 — lag desde que se agrego el sistema de party,
+        // ver comentario en PortalTeleport._lastPartyCheckTime): antes,
+        // TryGetPartyIdFromInstanceProperty/TryGetPartyIdFromStaticManager
+        // repetian TODO el trabajo de reflection (incluido
+        // AppDomain.CurrentDomain.GetAssemblies().Select(a => a.GetTypes()),
+        // el mas caro de lejos) en CADA llamada, sin importar que el
+        // resultado (que tipo/miembro real existe, si alguno) no puede
+        // cambiar durante la vida del proceso — el juego no agrega ni quita
+        // tipos de un ensamblado ya cargado en caliente. Se cachea la
+        // RESOLUCION (que PropertyInfo/MethodInfo usar, o la confirmacion de
+        // que ninguno existe) la primera vez, y las llamadas siguientes
+        // reusan el resultado cacheado sin volver a escanear nada.
+        private static readonly Dictionary<Type, PropertyInfo> _instancePropertyCache =
+            new Dictionary<Type, PropertyInfo>();
+
+        private static bool _staticManagerResolved;
+        private static MethodInfo _staticManagerMethod;
+        private static object _staticManagerTarget;
+
         /// <summary>
         /// Intenta resolver el ID de party del jugador. Devuelve false (con
         /// partyId=null) si el jugador no esta en ninguna party, o si no se
@@ -96,51 +116,107 @@ namespace PortalMod
         {
             var playerType = player.GetType();
 
-            foreach (var propName in InstancePartyPropertyCandidates)
+            // FIX real (Bug 1 — lag, ver comentario en _instancePropertyCache
+            // arriba): que candidato de nombre existe como propiedad real en
+            // este Type no puede cambiar en caliente — se resuelve una sola
+            // vez por Type y se reusa (null cacheado = "ninguno de los
+            // candidatos existe en este Type", tambien valido de no volver a
+            // buscar).
+            if (!_instancePropertyCache.TryGetValue(playerType, out var prop))
             {
-                // Busca en toda la jerarquia (EntityPlayer, EntityPlayerLocal,
-                // EntityAlive, Entity, ...), no solo en el tipo exacto.
-                var prop = FindPropertyInHierarchy(playerType, propName);
-                if (prop == null)
+                foreach (var propName in InstancePartyPropertyCandidates)
                 {
-                    continue;
+                    // Busca en toda la jerarquia (EntityPlayer, EntityPlayerLocal,
+                    // EntityAlive, Entity, ...), no solo en el tipo exacto.
+                    prop = FindPropertyInHierarchy(playerType, propName);
+                    if (prop != null)
+                    {
+                        break;
+                    }
                 }
 
-                var partyObj = prop.GetValue(player);
-                if (partyObj == null)
-                {
-                    // Propiedad existe pero es null: el jugador no esta en
-                    // party ahora mismo (candidato confirmado como real,
-                    // simplemente sin valor). No seguir probando otros
-                    // candidatos de nombre — este es "el" real.
-                    return null;
-                }
-
-                var id = ExtractIdFromPartyObject(partyObj);
-                if (id != null)
-                {
-                    return id;
-                }
-
-                // La propiedad existe y tiene un objeto, pero no se encontro
-                // ningun miembro de ID reconocible dentro — puede que el
-                // "partyObj" en si YA SEA el identificador (por ejemplo si
-                // "Party" fuera directamente un int/string/Guid).
-                if (IsSimpleIdType(partyObj))
-                {
-                    return partyObj.ToString();
-                }
+                _instancePropertyCache[playerType] = prop;
             }
 
-            return null;
+            if (prop == null)
+            {
+                return null;
+            }
+
+            // El VALOR si se relee en cada llamada (a proposito): a
+            // diferencia de "que propiedad existe" (cacheado arriba), si el
+            // jugador esta o no en una party ahora mismo SI puede cambiar
+            // entre llamadas.
+            var partyObj = prop.GetValue(player);
+            if (partyObj == null)
+            {
+                return null;
+            }
+
+            var id = ExtractIdFromPartyObject(partyObj);
+            if (id != null)
+            {
+                return id;
+            }
+
+            // La propiedad existe y tiene un objeto, pero no se encontro
+            // ningun miembro de ID reconocible dentro — puede que el
+            // "partyObj" en si YA SEA el identificador (por ejemplo si
+            // "Party" fuera directamente un int/string/Guid).
+            return IsSimpleIdType(partyObj) ? partyObj.ToString() : null;
         }
 
         private static string TryGetPartyIdFromStaticManager(EntityPlayer player)
+        {
+            // FIX real (Bug 1 — lag, ver comentario en _staticManagerResolved
+            // arriba): la busqueda de que tipo/metodo real usar (la parte
+            // cara: recorrer TODOS los ensamblados cargados y llamar
+            // GetTypes() en cada uno) se hace UNA SOLA VEZ por proceso, no en
+            // cada llamada.
+            if (!_staticManagerResolved)
+            {
+                ResolveStaticManager(player);
+                _staticManagerResolved = true;
+            }
+
+            if (_staticManagerMethod == null)
+            {
+                return null;
+            }
+
+            var target = _staticManagerMethod.IsStatic ? null : _staticManagerTarget;
+            if (!_staticManagerMethod.IsStatic && target == null)
+            {
+                return null;
+            }
+
+            var argValue = _staticManagerMethod.GetParameters()[0].ParameterType == typeof(int)
+                ? (object)player.entityId
+                : player;
+
+            var result = _staticManagerMethod.Invoke(target, new[] { argValue });
+            if (result == null)
+            {
+                return null;
+            }
+
+            var id = ExtractIdFromPartyObject(result);
+            if (id != null)
+            {
+                return id;
+            }
+
+            return IsSimpleIdType(result) ? result.ToString() : null;
+        }
+
+        private static void ResolveStaticManager(EntityPlayer player)
         {
             foreach (var typeName in StaticManagerTypeNameCandidates)
             {
                 // Busca el tipo en TODOS los ensamblados cargados (no solo
                 // Assembly-CSharp), ya que no se confirmo en cual viviria.
+                // Costoso (GetTypes() por ensamblado) — por eso este metodo
+                // entero corre una unica vez por proceso, ver _staticManagerResolved.
                 var managerType = AppDomain.CurrentDomain.GetAssemblies()
                     .Select(a => SafeGetType(a, typeName))
                     .FirstOrDefault(t => t != null);
@@ -149,8 +225,6 @@ namespace PortalMod
                 {
                     continue;
                 }
-
-                var instance = GetSingletonInstance(managerType);
 
                 // Candidatos de nombre de metodo que reciba el jugador (o su
                 // entityId) y devuelva el objeto/ID de party.
@@ -165,35 +239,16 @@ namespace PortalMod
                     continue;
                 }
 
-                var target = method.IsStatic ? null : instance;
-                if (!method.IsStatic && target == null)
+                var instance = method.IsStatic ? null : GetSingletonInstance(managerType);
+                if (!method.IsStatic && instance == null)
                 {
                     continue;
                 }
 
-                var argValue = method.GetParameters()[0].ParameterType == typeof(int)
-                    ? (object)player.entityId
-                    : player;
-
-                var result = method.Invoke(target, new[] { argValue });
-                if (result == null)
-                {
-                    return null;
-                }
-
-                var id = ExtractIdFromPartyObject(result);
-                if (id != null)
-                {
-                    return id;
-                }
-
-                if (IsSimpleIdType(result))
-                {
-                    return result.ToString();
-                }
+                _staticManagerMethod = method;
+                _staticManagerTarget = instance;
+                return;
             }
-
-            return null;
         }
 
         private static PropertyInfo FindPropertyInHierarchy(Type startType, string propName)

@@ -109,6 +109,23 @@ namespace PortalMod
         private readonly Dictionary<string, string> _lastKnownPortalKey =
             new Dictionary<string, string>();
 
+        // FIX real (Bug 2 — portal desaparecido al entrar al servidor):
+        // steamId -> ownerKey nueva vista en la revision ANTERIOR pero
+        // todavia no aplicada. CheckPartyMembershipChanged ya no migra
+        // apenas ve una key distinta de _lastKnownPortalKey — exige verla
+        // REPETIDA (misma key, dos revisiones seguidas) antes de mover nada.
+        // PortalParty.TryGetPartyId es reflection sin confirmar contra el
+        // DLL real (ver TODO CRITICO ahi): una lectura puntual inestable
+        // (por ejemplo si el dato de party del jugador todavia no termino
+        // de sincronizarse justo al conectarse, o si un candidato de
+        // reflection matchea por error una propiedad no relacionada) ya
+        // podia disparar una migracion real sobre la base de un unico
+        // valor que se revertia en la revision siguiente — el portal
+        // quedaba registrado bajo una ownerKey que ese jugador ya no vuelve
+        // a resolver, indistinguible en el juego de "el portal desaparecio".
+        private readonly Dictionary<string, string> _pendingPartyKey =
+            new Dictionary<string, string>();
+
         private const int MaxPortalsPerTag = 2;
         public const float CooldownSeconds = 5f;
 
@@ -431,8 +448,26 @@ namespace PortalMod
 
                 if (lastKey == currentKey)
                 {
+                    // Estable de nuevo: descartar cualquier cambio pendiente
+                    // que no llego a confirmarse dos veces seguidas.
+                    _pendingPartyKey.Remove(steamId);
                     return;
                 }
+
+                // GUARD (Bug 2, ver comentario en _pendingPartyKey arriba):
+                // no migrar en la PRIMERA revision que difiere de lastKey —
+                // exigir que la MISMA key nueva se repita en la revision
+                // siguiente (separadas por el throttle real de
+                // PortalTeleport.PartyCheckThrottleSeconds) antes de mover
+                // ningun portal.
+                if (!_pendingPartyKey.TryGetValue(steamId, out var pendingKey) || pendingKey != currentKey)
+                {
+                    _pendingPartyKey[steamId] = currentKey;
+                    API.LogWarning($"MigratePortals cancelada — key inestable detectada (pendingKey={currentKey}, observaciones=1/2)");
+                    return;
+                }
+
+                _pendingPartyKey.Remove(steamId);
 
                 if (lastKey == steamId)
                 {
@@ -1026,6 +1061,7 @@ namespace PortalMod
                 // proceso anterior que no deben sobrevivir a cargar otro mundo.
                 _originalOwnerSteamId.Clear();
                 _lastKnownPortalKey.Clear();
+                _pendingPartyKey.Clear();
 
                 var discardedCount = 0;
                 var skippedLineCount = 0;
