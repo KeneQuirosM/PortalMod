@@ -151,6 +151,30 @@ namespace PortalMod
                 return;
             }
 
+            // TODO: verificar en Assembly-CSharp V3.0 el metodo correcto para
+            // leer el bloque actual en una posicion. Candidato de builds
+            // anteriores: World.GetBlock(Vector3i).
+            var currentBv = world.GetBlock(pos);
+
+            // FIX real (bug: los 6 estilos de portal siempre mostraban el
+            // modelo "legacy"): defensa adicional ademas del FIX real en
+            // Block_OnBlockPlaceBefore_Patch/PortalManager.RegisterPortal
+            // (que ahora resuelven y guardan el estilo correcto desde el
+            // momento de la colocacion). Si por algun motivo igual llega aca
+            // sin estilo (style null/vacio — por ejemplo un portal cargado
+            // desde un portals.dat viejo sin ese dato, ver Load()), NO
+            // asumir directamente "legacy": primero intentar inferirlo del
+            // bloque que YA esta fisicamente en esta posicion (si es un
+            // inactivo de estilo reconocido, GetStyleFromInactiveBlockName lo
+            // encuentra). Esto evita downgradear a legacy un portal que en
+            // realidad SI tiene un estilo valido colocado, y solo cae al
+            // fallback real de "legacy" cuando de verdad no hay forma de
+            // saberlo.
+            if (string.IsNullOrEmpty(style))
+            {
+                style = PortalBiomes.GetStyleFromInactiveBlockName(currentBv.Block?.GetBlockName());
+            }
+
             var targetName = state == BlockState.Inactive
                 ? PortalBiomes.GetInactiveBlockName(style)
                 : PortalBiomes.GetActiveBlockName(style, biome);
@@ -171,10 +195,6 @@ namespace PortalMod
                 return;
             }
 
-            // TODO: verificar en Assembly-CSharp V3.0 el metodo correcto para
-            // leer el bloque actual en una posicion. Candidato de builds
-            // anteriores: World.GetBlock(Vector3i).
-            var currentBv = world.GetBlock(pos);
             API.Log($"[PortalMod] SetBlockState pos={pos} bloqueActual={currentBv.Block?.GetBlockName()} bloqueObjetivo={targetName}");
             if (currentBv.Block == targetBlock)
             {

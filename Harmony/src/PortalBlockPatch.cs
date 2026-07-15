@@ -76,8 +76,17 @@ namespace PortalMod
             {
                 // El bloque existe en el mundo pero aun no fue registrado
                 // (por ejemplo si el jugador cerro la ventana sin confirmar
-                // al colocarlo): permitir asignarle un tag ahora.
-                XUiPortalTag.OpenForNewPortal(player, blockPos);
+                // al colocarlo): permitir asignarle un tag ahora. A
+                // diferencia de Block_OnBlockPlaceBefore_Patch (donde el
+                // estilo se resuelve del Block recien colocado, ver FIX real
+                // ahi), aca es seguro leer el bloque directo del mundo: para
+                // llegar a esta rama el jugador tuvo que activarlo (tecla E)
+                // sobre un bloque que ya lleva un rato colocado y estable, sin
+                // el riesgo de timing de una colocacion recien iniciada.
+                var world = GameManager.Instance != null ? GameManager.Instance.World : null;
+                var currentBlock = world?.GetBlock(blockPos).Block;
+                var style = currentBlock != null ? PortalBiomes.GetStyleFromInactiveBlockName(currentBlock.GetBlockName()) : null;
+                XUiPortalTag.OpenForNewPortal(player, blockPos, style);
             }
         }
     }
@@ -130,12 +139,35 @@ namespace PortalMod
                 }
 
                 var blockPos = _bpResult.blockPos;
-                API.Log($"portalBlock colocado en {blockPos} por {PortalIdentity.GetSteamId(player)}. Abriendo ventana de nombre de tag.");
+
+                // FIX real (bug: los 6 estilos de portal siempre mostraban el
+                // modelo "legacy" sin importar el item usado): antes el estilo
+                // se resolvia recien en PortalManager.RegisterPortal, leyendo
+                // world.GetBlock(pos) en el momento en que el jugador confirma
+                // el tag (Confirm(), en XUiPortalTag) — potencialmente varios
+                // frames despues de este Postfix (ver TODO arriba: "Before" no
+                // garantiza que el bloque ya este realmente en el mundo). Si
+                // ese re-lectura ocurria antes de que la colocacion terminara
+                // de propagarse, world.GetBlock(pos) devolvia otra cosa (aire
+                // u otro bloque), el estilo resolvia a null, y
+                // PortalVisualFX.RefreshBlockState (llamado igual, para dejar
+                // el portal recien colocado en estado "huerfano") terminaba
+                // SOBRESCRIBIENDO el bloque recien colocado por la variante
+                // inactiva LEGACY (el fallback de PortalBiomes cuando no hay
+                // estilo) — de ahi que TODOS los estilos terminaran viendose
+                // iguales (siempre el legacy). Aca, en cambio, "__instance" ES
+                // el Block real que el juego esta colocando (confirmado por
+                // este mismo log de arriba) — se resuelve el estilo AHORA,
+                // cuando es 100% confiable, y se lo pasa a traves de
+                // OpenForNewPortal/RegisterPortal en vez de re-derivarlo mas
+                // tarde desde el estado del mundo.
+                var knownStyle = PortalBiomes.GetStyleFromInactiveBlockName(__instance.GetBlockName());
+                API.Log($"portalBlock colocado en {blockPos} por {PortalIdentity.GetSteamId(player)} (estilo detectado: {knownStyle ?? "(ninguno, usara fallback)"}). Abriendo ventana de nombre de tag.");
 
                 // El bloque todavia no esta registrado en PortalManager: se registra
                 // recien cuando el jugador confirma un tag en la ventana (ver XUiPortalTag).
                 API.Log("[PortalMod] Llamando a XUiPortalTag.OpenForNewPortal...");
-                XUiPortalTag.OpenForNewPortal(player, blockPos);
+                XUiPortalTag.OpenForNewPortal(player, blockPos, knownStyle);
             }
             catch (Exception e)
             {

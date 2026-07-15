@@ -505,8 +505,17 @@ namespace PortalMod
         /// Valida que no existan ya 2 portales con ese tag para el dueño
         /// resuelto (party del jugador, o su steamId personal si no esta en
         /// una — ver GetPortalKey).
+        ///
+        /// "knownStyle" (Feature "Opcion A: 6 items separados"): estilo YA
+        /// resuelto por el llamador en un momento confiable (ver FIX real en
+        /// Block_OnBlockPlaceBefore_Patch — el estilo se determina ahi, no
+        /// aca). Si se pasa null (por ejemplo desde RenamePortal, re-
+        /// registrando una posicion que ya tenia un bloque colocado hace
+        /// rato), se cae al comportamiento anterior de re-derivarlo leyendo
+        /// el bloque del mundo (ResolveStyleName) — seguro en ese caso
+        /// porque no hay una colocacion recien iniciada de por medio.
         /// </summary>
-        public RegisterResult RegisterPortal(EntityPlayer player, string tag, Vector3i pos)
+        public RegisterResult RegisterPortal(EntityPlayer player, string tag, Vector3i pos, string knownStyle = null)
         {
             // AUDITORIA (NullReferenceException sin capturar), + Feature
             // "portales por party": antes este metodo tomaba un "steamId"
@@ -585,7 +594,7 @@ namespace PortalMod
 
                 if (!_styles.ContainsKey(pos))
                 {
-                    _styles[pos] = ResolveStyleName(pos);
+                    _styles[pos] = !string.IsNullOrEmpty(knownStyle) ? knownStyle : ResolveStyleName(pos);
                     API.Log($"[PortalMod] Estilo detectado para portal en {pos}: {_styles[pos] ?? "(desconocido, usa estilo default/legacy)"}");
                 }
 

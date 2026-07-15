@@ -42,6 +42,16 @@ namespace PortalMod
         private static EntityPlayer _pendingPlayer;
         private static string _pendingCurrentTag;
 
+        // Estilo del portal (Feature "Opcion A: 6 items separados"), resuelto
+        // por PortalBlockPatch en el momento de la colocacion real (ver FIX
+        // real en Block_OnBlockPlaceBefore_Patch) y llevado hasta aca para
+        // pasarselo directo a RegisterPortal — evita que PortalManager tenga
+        // que re-derivarlo mas tarde leyendo el bloque del mundo, lectura que
+        // puede correr antes de que la colocacion haya terminado de
+        // propagarse. Null para el modo Rename (no aplica: el portal ya
+        // existe y ya tiene un estilo guardado).
+        private static string _pendingStyle;
+
         private XUiC_TextInput _tagInput;
         private bool _buttonsWired;
 
@@ -121,13 +131,14 @@ namespace PortalMod
             WireButtons();
         }
 
-        /// <summary>Abre la ventana para asignar tag a un portal recien colocado.</summary>
-        public static void OpenForNewPortal(EntityPlayer player, Vector3i blockPos)
+        /// <summary>Abre la ventana para asignar tag a un portal recien colocado. "style" viene ya resuelto desde el momento de la colocacion (ver Block_OnBlockPlaceBefore_Patch) — puede ser null si no se reconocio ningun estilo conocido.</summary>
+        public static void OpenForNewPortal(EntityPlayer player, Vector3i blockPos, string style)
         {
             _pendingMode = Mode.NewPortal;
             _pendingPlayer = player;
             _pendingBlockPos = blockPos;
             _pendingCurrentTag = string.Empty;
+            _pendingStyle = style;
             OpenWindow(player);
         }
 
@@ -138,6 +149,7 @@ namespace PortalMod
             _pendingPlayer = player;
             _pendingBlockPos = blockPos;
             _pendingCurrentTag = currentTag;
+            _pendingStyle = null;
             OpenWindow(player);
         }
 
@@ -275,7 +287,7 @@ namespace PortalMod
                 }
 
                 var result = _pendingMode == Mode.NewPortal
-                    ? PortalManager.Instance.RegisterPortal(_pendingPlayer, tag, _pendingBlockPos)
+                    ? PortalManager.Instance.RegisterPortal(_pendingPlayer, tag, _pendingBlockPos, _pendingStyle)
                     : PortalManager.Instance.RenamePortal(_pendingPlayer, _pendingBlockPos, tag);
 
                 switch (result)
