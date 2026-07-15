@@ -86,6 +86,28 @@ namespace PortalMod
                 return false;
             }
 
+            // FIX real (reporte: 9 de 10 portales fallaban "TileEntityPowered
+            // no encontrado" — solo el portal cerca del jugador pasaba el
+            // check): el chunk del portal puede estar descargado de memoria
+            // (streaming por distancia — el resto del jugador no esta cerca).
+            // World.GetTileEntity ya decompilado confirma que, sin chunk
+            // cargado, devuelve null exactamente igual que "de verdad no hay
+            // TileEntity ahi" — indistinguible sin chequear el chunk aparte.
+            // World.IsChunkAreaLoaded(x,y,z) es la MISMA API real ya usada en
+            // PortalManager.CheckPortalBlockAt para este exacto problema (se
+            // prefiere sobre "world.GetChunkFromWorldPos(pos)": ese metodo no
+            // existe en World, vive en World.ChunkCache — confirmado por
+            // decompilacion, IsChunkAreaLoaded ya hace ese trabajo). Si el
+            // chunk no esta cargado, NO se puede saber el estado real de
+            // energia — se asume energizado (en vez de bloquear el viaje) en
+            // vez de tratar "no se pudo verificar" como "sin energia": el
+            // check solo debe fallar cuando el chunk SI esta cargado y
+            // confirma que no hay corriente.
+            if (!world.IsChunkAreaLoaded(pos.x, pos.y, pos.z))
+            {
+                return true;
+            }
+
             var resolvedPos = ResolveMasterCellPos(world, pos);
             var tileEntity = world.GetTileEntity(resolvedPos) as TileEntityPowered;
 
