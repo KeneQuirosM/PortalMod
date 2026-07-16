@@ -275,23 +275,39 @@ namespace PortalMod
             var landingPos = FindLandingBlockPos(destinationBlockPos);
             var destination = new Vector3(landingPos.x + 0.5f, landingPos.y + 0.1f, landingPos.z + 0.5f);
 
-            // FIX real (usar la MISMA API que usa el juego para su propio
-            // teletransporte, en vez de SetPosition a mano): confirmado por
-            // decompilacion que EntityPlayer.Teleport(Vector3 _pos, float
-            // _dir = float.MinValue) es el metodo real y generico (existe en
-            // la clase base EntityPlayer, no solo en EntityPlayerLocal —
-            // funciona tanto en cliente como en servidor dedicado) que usa
-            // el propio juego para todo teletransporte real (respawn, cama,
-            // etc. pasan por aca via EntityPlayerLocal.TeleportToPosition).
-            // Su cuerpo real es "SetPosition(_pos); ...;
-            // Respawn(RespawnType.Teleport)" — hace lo mismo que
-            // SetPosition pero ademas dispara Respawn(RespawnType.Teleport),
-            // la misma señal que usa el juego para asentar al jugador
-            // despues de moverlo (limpieza de estado asociada, igual que en
-            // cualquier teletransporte vanilla). _dir se deja en su default
-            // (no cambiar la rotacion de camara del jugador al llegar, igual
-            // que el SetPosition anterior).
-            player.Teleport(destination);
+            // FIX real (el jugador seguia apareciendo ENCIMA del techo pese
+            // al fix anterior con World.CanPlayersSpawnAtPos): usar
+            // player.Teleport(...) (commit "instant portal teleport") fue lo
+            // que en realidad REINTRODUJO el bug. Teleport() hace
+            // "SetPosition(_pos); ...; Respawn(RespawnType.Teleport)" — y
+            // decompilando PlayerMoveController.Respawn(RespawnType) se
+            // confirmo que ESE metodo NO reposiciona nada de inmediato, solo
+            // fija "respawnReason"/un timer y pone Spawned=false: dispara una
+            // maquina de estados que el propio PlayerMoveController sigue
+            // procesando en frames POSTERIORES via updateRespawn() — el mismo
+            // metodo que, si la posicion no pasa World.CanPlayersSpawnAtPos
+            // (ni esa posicion +1), la descarta y reubica al jugador en
+            // World.GetHeight(x,z)+1 (ver FIX real de FindLandingBlockPos).
+            // O sea: aunque FindLandingBlockPos elija un Y perfectamente
+            // valido, Teleport() igual dispara ese rescate unos frames
+            // despues, que puede terminar sobreescribiendo la posicion que
+            // recien pusimos.
+            //
+            // NOTA: se investigo el comando de consola "teleport" (para ver
+            // si evita este rescate) — decompilando ConsoleCmdTeleportsAbs.
+            // ExecuteTeleport -> NetPackageTeleportPlayer.ProcessPackage se
+            // confirmo que TAMBIEN llama primaryPlayer.TeleportToPosition(...)
+            // (la misma cadena Teleport()/Respawn(RespawnType.Teleport) de
+            // arriba) — no es una ruta alternativa que evite el rescate, solo
+            // no lo nota en la practica porque normalmente se usa en zonas
+            // abiertas. Entity.SetPosition(Vector3, bool) (decompilado: solo
+            // actualiza "position"/"boundingBox"/transform de fisica, sin
+            // tocar Respawn/CanPlayersSpawnAtPos/rescate de terreno en
+            // absoluto) es la API real mas simple que logra evitar
+            // completamente esa maquina de estados. Se vuelve a este metodo
+            // (el que este archivo usaba antes del commit "instant portal
+            // teleport") en vez de Teleport().
+            player.SetPosition(destination, true);
 
             // Rafaga de particulas en el DESTINO, ademas de la que dispara
             // buffPortalTravel (onSelfBuffStart en buffs.xml) al aplicarse el
