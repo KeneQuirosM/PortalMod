@@ -306,21 +306,36 @@ namespace PortalMod
         }
 
         // FIX real (el jugador aparecia ENCIMA de un techo/estructura
-        // construida sobre el portal destino, en vez de dentro de el): la
-        // posicion de aterrizaje se calculaba siempre en destinationBlockPos.y
-        // sin verificar nada, confiando en que esa celda (el propio marco del
-        // portal, MultiBlockDim="1,2,1") estuviera libre. Si algo raro deja esa
-        // celda bloqueada, la correccion debe buscar espacio DESCENDIENDO
-        // desde el portal — nunca ascendiendo, que es lo que terminaba
-        // dejando al jugador arriba de cualquier techo/piso construido
-        // encima. "Pasable" usa la MISMA condicion real que usa el propio
-        // juego para decidir si una celda puede alojar algo (confirmado
-        // decompilando Block.MultiBlockArray.AddChilds: "blockValue.isair ||
-        // !blockValue.Block.shape.IsTerrain()") — el propio portalBlock
-        // (Shape="ModelEntity", no "Terrain") ya cuenta como pasable con
-        // esto, asi que en el caso normal (nada construido encima ni dentro)
-        // esto devuelve destinationBlockPos sin cambios, exactamente el
-        // comportamiento de antes de este fix.
+        // construida sobre el portal destino, en vez de dentro de el):
+        // el intento anterior de este fix usaba "blockValue.isair ||
+        // !blockValue.Block.shape.IsTerrain()" como chequeo de "celda
+        // libre" — ese es el criterio que usa Block.MultiBlockArray.
+        // AddChilds para decidir si un multiblock puede alojar un hijo ahi,
+        // pero NO significa "un jugador puede pararse aca": decompilando
+        // BlockShapeCube.IsTerrain() se confirmo que NO sobreescribe el
+        // metodo (hereda el default "false" de BlockShape) — es decir,
+        // CUALQUIER pared/piso/techo normal construido por un jugador
+        // (Shape="Cube") tambien "pasa" ese chequeo, asi que el intento
+        // anterior nunca detectaba un techo real y el escaneo jamas
+        // se activaba (siempre devolvia destinationBlockPos sin cambios).
+        //
+        // La causa real de por que terminaba arriba del techo ademas se
+        // confirmo decompilando PlayerMoveController.updateRespawn (parte
+        // del propio Respawn(RespawnType.Teleport) que dispara
+        // EntityPlayer.Teleport): si la posicion que le pasamos NO pasa
+        // World.CanPlayersSpawnAtPos (ni esa posicion +1 en Y), el JUEGO
+        // MISMO descarta silenciosamente nuestra posicion y reubica al
+        // jugador en "World.GetHeight(x,z) + 1" — la altura de la superficie
+        // solida mas alta en esa columna XZ, que en un cuarto cerrado ES el
+        // techo. Por eso hace falta usar la MISMA API real que usa esa
+        // rescate interno (World.CanPlayersSpawnAtPos — publica, usada
+        // tambien por EntityPlayerLocal.TryAddRecoveryPosition para puntos
+        // de recuperacion) para elegir un Y que el juego vaya a aceptar tal
+        // cual, en vez de adivinar una condicion de "pasable" propia.
+        //
+        // Se escanea DESCENDENTE desde el portal (nunca ascendente, para no
+        // terminar nunca arriba de una estructura) buscando el primer Y
+        // donde CanPlayersSpawnAtPos ya de por si acepta la posicion.
         private static Vector3i FindLandingBlockPos(Vector3i portalPos)
         {
             var world = GameManager.Instance != null ? GameManager.Instance.World : null;
@@ -332,25 +347,21 @@ namespace PortalMod
             const int maxScanDown = 32;
             for (var dy = 0; dy >= -maxScanDown; dy--)
             {
-                var feetPos = portalPos + new Vector3i(0, dy, 0);
-                var headPos = feetPos + new Vector3i(0, 1, 0);
-                if (IsPassable(world, feetPos) && IsPassable(world, headPos))
+                var candidate = portalPos + new Vector3i(0, dy, 0);
+                // _bAllowToSpawnOnAirPos: true, igual que usa el propio
+                // PlayerMoveController.updateRespawn/TryAddRecoveryPosition
+                // al buscar una posicion de rescate.
+                if (world.CanPlayersSpawnAtPos(candidate.ToVector3(), true))
                 {
-                    return feetPos;
+                    return candidate;
                 }
             }
 
-            // No se encontro espacio libre en el rango escaneado: quedarse
+            // No se encontro espacio valido en el rango escaneado: quedarse
             // con la posicion original del portal (mismo comportamiento que
             // antes de este fix) en vez de arriesgarse a subir por encima de
             // una estructura.
             return portalPos;
-        }
-
-        private static bool IsPassable(World world, Vector3i pos)
-        {
-            var blockValue = world.GetBlock(pos);
-            return blockValue.isair || !blockValue.Block.shape.IsTerrain();
         }
 
         private static void ApplyTravelBuff(EntityPlayer player)
