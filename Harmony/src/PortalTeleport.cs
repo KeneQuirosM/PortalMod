@@ -307,7 +307,27 @@ namespace PortalMod
             // completamente esa maquina de estados. Se vuelve a este metodo
             // (el que este archivo usaba antes del commit "instant portal
             // teleport") en vez de Teleport().
-            player.SetPosition(destination, true);
+            //
+            // FIX real (Bug: no se podia teletransportar estando en un
+            // vehiculo — esto funcionaba durante la breve ventana en la que
+            // este archivo uso player.Teleport(...), y se rompio al volver a
+            // SetPosition directo): el cuerpo real decompilado de
+            // EntityPlayer.Teleport es "if (AttachedToEntity)
+            // AttachedToEntity.SetPosition(_pos); else SetPosition(_pos);" —
+            // si el jugador esta AttachedToEntity (sentado/manejando un
+            // vehiculo), mover al JUGADOR no sirve de nada porque su
+            // posicion visual la controla el vehiculo; hay que mover el
+            // vehiculo. Se replica exactamente esa parte (sin el resto del
+            // cuerpo de Teleport(), que dispara Respawn() y reintroduce el
+            // bug del techo de arriba).
+            if (player.AttachedToEntity != null)
+            {
+                player.AttachedToEntity.SetPosition(destination, true);
+            }
+            else
+            {
+                player.SetPosition(destination, true);
+            }
 
             // Rafaga de particulas en el DESTINO, ademas de la que dispara
             // buffPortalTravel (onSelfBuffStart en buffs.xml) al aplicarse el
@@ -349,9 +369,21 @@ namespace PortalMod
         // de recuperacion) para elegir un Y que el juego vaya a aceptar tal
         // cual, en vez de adivinar una condicion de "pasable" propia.
         //
-        // Se escanea DESCENDENTE desde el portal (nunca ascendente, para no
-        // terminar nunca arriba de una estructura) buscando el primer Y
-        // donde CanPlayersSpawnAtPos ya de por si acepta la posicion.
+        // Se escanea DESCENDENTE (nunca ascendente, para no terminar nunca
+        // arriba de una estructura) buscando el primer Y donde
+        // CanPlayersSpawnAtPos ya de por si acepta la posicion.
+        //
+        // FIX real (Bug: jugador caia a un piso mas abajo si el portal
+        // estaba elevado o tenia un hueco justo debajo): escanear
+        // descendente arrancando EN la posicion exacta del portal es fragil
+        // si no hay piso ahi mismo (por ejemplo un portal montado en una
+        // plataforma con vacio debajo) — el escaneo bajaba hasta encontrar
+        // CUALQUIER superficie valida, sin importar cuan lejos estuviera del
+        // portal. Se arranca el escaneo, en cambio, en la celda 1 bloque
+        // ADELANTE del portal (misma Y, direccion real a la que mira el
+        // bloque — ver GetForwardOffset) en vez de encima/dentro de el: un
+        // hueco justo DEBAJO del portal ya no afecta el aterrizaje, porque
+        // el punto de partida del escaneo esta al frente, no sobre el marco.
         private static Vector3i FindLandingBlockPos(Vector3i portalPos)
         {
             var world = GameManager.Instance != null ? GameManager.Instance.World : null;
@@ -360,10 +392,12 @@ namespace PortalMod
                 return portalPos;
             }
 
+            var scanStart = portalPos + GetForwardOffset(world, portalPos);
+
             const int maxScanDown = 32;
             for (var dy = 0; dy >= -maxScanDown; dy--)
             {
-                var candidate = portalPos + new Vector3i(0, dy, 0);
+                var candidate = scanStart + new Vector3i(0, dy, 0);
                 // _bAllowToSpawnOnAirPos: true, igual que usa el propio
                 // PlayerMoveController.updateRespawn/TryAddRecoveryPosition
                 // al buscar una posicion de rescate.
@@ -374,10 +408,39 @@ namespace PortalMod
             }
 
             // No se encontro espacio valido en el rango escaneado: quedarse
-            // con la posicion original del portal (mismo comportamiento que
-            // antes de este fix) en vez de arriesgarse a subir por encima de
-            // una estructura.
-            return portalPos;
+            // con la celda 1 bloque adelante del portal (mismo Y) en vez de
+            // arriesgarse a caer mas abajo o subir por encima de una
+            // estructura.
+            return scanStart;
+        }
+
+        // Direccion real hacia la que "mira" el portal (1 bloque adelante, en
+        // el eje horizontal), a partir de su rotacion real de colocacion.
+        // Block.shape.GetRotation(BlockValue) es publico y real — confirmado
+        // decompilando BlockShapeModelEntity.GetRotation (delega en
+        // BlockShapeNew.GetRotationStatic, una tabla real rotacion->Quaternion)
+        // — es el MISMO Quaternion que usa el motor para orientar el
+        // modelo/colision del bloque, la misma API que ya usa
+        // Chunk.OnDisplayBlockEntities (decompilado en una investigacion
+        // anterior) para calcular el offset rotado de un ModelEntity.
+        // portalBlock solo rota en el eje Y (colocacion horizontal), asi que
+        // "Quaternion * Vector3.forward" redondeado al eje cardinal mas
+        // cercano da exactamente el offset de 1 bloque buscado.
+        private static Vector3i GetForwardOffset(World world, Vector3i portalPos)
+        {
+            var blockValue = world.GetBlock(portalPos);
+            var block = blockValue.Block;
+            if (block == null)
+            {
+                // Sin bloque real ahi (portal fantasma/no confirmado todavia):
+                // no hay direccion que calcular, no se aplica ningun offset.
+                return Vector3i.zero;
+            }
+
+            var forward = block.shape.GetRotation(blockValue) * Vector3.forward;
+            return Mathf.Abs(forward.x) > Mathf.Abs(forward.z)
+                ? new Vector3i(forward.x > 0 ? 1 : -1, 0, 0)
+                : new Vector3i(0, 0, forward.z > 0 ? 1 : -1);
         }
 
         private static void ApplyTravelBuff(EntityPlayer player)
