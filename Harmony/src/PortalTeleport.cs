@@ -51,6 +51,24 @@ namespace PortalMod
         private static readonly Dictionary<string, float> _lastPartyCheckTime = new Dictionary<string, float>();
         private const float PartyCheckThrottleSeconds = 5f;
 
+        // FIX real (Bug: doble teletransporte para el mismo jugador en el
+        // mismo tick — log real: "Teletransporte ejecutado: steamId=171 ->
+        // 178,61,777" seguido inmediatamente de otro a "165,61,778", 1 bloque
+        // de diferencia — riesgo de duplicacion de items si algo del juego
+        // reacciona al movimiento/posicion dos veces). El cooldown de
+        // PortalManager (5s, ver PortalManager._cooldowns) ya se chequea mas
+        // abajo, pero solo se aplica DESPUES de que ExecuteTeleport llega
+        // hasta el final (SetCooldown se llama ahi) — cualquier ventana de
+        // reentrada entre "decidimos teletransportar" y "terminamos de
+        // ejecutar" podia dejar pasar una segunda activacion antes de que el
+        // cooldown quedara escrito. Se agrega un throttle propio, MAS CORTO
+        // (2s) y MAS TEMPRANO (primero que cualquier otro chequeo de este
+        // metodo, incluido el de PortalManager), fijado al toque en
+        // ExecuteTeleport ANTES de hacer cualquier otra cosa — mismo patron
+        // Dictionary&lt;string,float&gt; + Time.time que el resto de esta clase.
+        private static readonly Dictionary<string, float> _lastTeleportTime = new Dictionary<string, float>();
+        private const float PostTeleportThrottleSeconds = 2f;
+
         public static void Init()
         {
             API.Log("PortalTeleport inicializado.");
@@ -138,6 +156,16 @@ namespace PortalMod
         {
             var steamId = PortalIdentity.GetSteamId(player);
             if (string.IsNullOrEmpty(steamId))
+            {
+                return;
+            }
+
+            // FIX real (Bug: doble teletransporte, ver comentario en
+            // _lastTeleportTime arriba): chequeo mas temprano y mas estricto
+            // que todo lo demas en este metodo, para cerrar cualquier
+            // ventana de reentrada.
+            if (_lastTeleportTime.TryGetValue(steamId, out var lastTeleport) &&
+                Time.time - lastTeleport < PostTeleportThrottleSeconds)
             {
                 return;
             }
@@ -262,6 +290,12 @@ namespace PortalMod
 
         private static void ExecuteTeleport(EntityPlayer player, string steamId, Vector3i originBlockPos, Vector3i destinationBlockPos)
         {
+            // FIX real (Bug: doble teletransporte, ver comentario en
+            // _lastTeleportTime): se fija ANTES de hacer cualquier otra cosa
+            // (particulas, SetPosition, buffs) para cerrar la ventana de
+            // reentrada lo mas posible — no al final del metodo.
+            _lastTeleportTime[steamId] = Time.time;
+
             // Flash + rafaga de particulas en el portal de ORIGEN, antes de mover
             // al jugador: una vez teletransportado ya no queda nadie ahi para
             // disparar el efecto via buff, asi que se hace explicitamente aqui.
@@ -369,21 +403,27 @@ namespace PortalMod
         // de recuperacion) para elegir un Y que el juego vaya a aceptar tal
         // cual, en vez de adivinar una condicion de "pasable" propia.
         //
-        // Se escanea DESCENDENTE (nunca ascendente, para no terminar nunca
-        // arriba de una estructura) buscando el primer Y donde
-        // CanPlayersSpawnAtPos ya de por si acepta la posicion.
-        //
-        // FIX real (Bug: jugador caia a un piso mas abajo si el portal
-        // estaba elevado o tenia un hueco justo debajo): escanear
-        // descendente arrancando EN la posicion exacta del portal es fragil
-        // si no hay piso ahi mismo (por ejemplo un portal montado en una
-        // plataforma con vacio debajo) — el escaneo bajaba hasta encontrar
-        // CUALQUIER superficie valida, sin importar cuan lejos estuviera del
-        // portal. Se arranca el escaneo, en cambio, en la celda 1 bloque
-        // ADELANTE del portal (misma Y, direccion real a la que mira el
-        // bloque — ver GetForwardOffset) en vez de encima/dentro de el: un
-        // hueco justo DEBAJO del portal ya no afecta el aterrizaje, porque
-        // el punto de partida del escaneo esta al frente, no sobre el marco.
+        // FIX real (Bug: "1 bloque adelante" del intento anterior podia
+        // terminar DENTRO de una pared — "adelante" depende de la rotacion
+        // del portal y del layout real del cuarto, ninguno de los dos
+        // garantiza que esa celda especifica este libre): se vuelve a la
+        // posicion XZ EXACTA del portal — el jugador debe aparecer siempre
+        // dentro del propio marco del portal (el "footprint"), nunca
+        // desplazado a un costado. Solo se ajusta la celda Y:
+        //   1) Primero se prueba EN o apenas ARRIBA de la Y del portal (0,
+        //      +1, +2) — cubre el caso normal (portal libre) y el caso de
+        //      un piso/objeto que invadio la celda inferior del marco.
+        //   2) Si nada de eso pasa CanPlayersSpawnAtPos (techo demasiado
+        //      bajo justo arriba del portal), se escanea DESCENDENTE desde
+        //      la Y del portal para encontrar el piso real.
+        // En ambos pasos se usa CanPlayersSpawnAtPos — la MISMA API real que
+        // usa el rescate interno del juego (PlayerMoveController.
+        // updateRespawn, ver comentario mas arriba) — para garantizar que la
+        // celda elegida ya sea valida ANTES de escribir la posicion: aunque
+        // este archivo ya no llama a Teleport()/Respawn() (ver comentario
+        // arriba de ExecuteTeleport, se revirtio a SetPosition especificamente
+        // para evitar ese rescate), sigue siendo la forma correcta de
+        // confirmar "el jugador realmente puede pararse aca" sin adivinar.
         private static Vector3i FindLandingBlockPos(Vector3i portalPos)
         {
             var world = GameManager.Instance != null ? GameManager.Instance.World : null;
@@ -392,12 +432,10 @@ namespace PortalMod
                 return portalPos;
             }
 
-            var scanStart = portalPos + GetForwardOffset(world, portalPos);
-
-            const int maxScanDown = 32;
-            for (var dy = 0; dy >= -maxScanDown; dy--)
+            const int maxScanUp = 2;
+            for (var dy = 0; dy <= maxScanUp; dy++)
             {
-                var candidate = scanStart + new Vector3i(0, dy, 0);
+                var candidate = portalPos + new Vector3i(0, dy, 0);
                 // _bAllowToSpawnOnAirPos: true, igual que usa el propio
                 // PlayerMoveController.updateRespawn/TryAddRecoveryPosition
                 // al buscar una posicion de rescate.
@@ -407,40 +445,20 @@ namespace PortalMod
                 }
             }
 
-            // No se encontro espacio valido en el rango escaneado: quedarse
-            // con la celda 1 bloque adelante del portal (mismo Y) en vez de
-            // arriesgarse a caer mas abajo o subir por encima de una
-            // estructura.
-            return scanStart;
-        }
-
-        // Direccion real hacia la que "mira" el portal (1 bloque adelante, en
-        // el eje horizontal), a partir de su rotacion real de colocacion.
-        // Block.shape.GetRotation(BlockValue) es publico y real — confirmado
-        // decompilando BlockShapeModelEntity.GetRotation (delega en
-        // BlockShapeNew.GetRotationStatic, una tabla real rotacion->Quaternion)
-        // — es el MISMO Quaternion que usa el motor para orientar el
-        // modelo/colision del bloque, la misma API que ya usa
-        // Chunk.OnDisplayBlockEntities (decompilado en una investigacion
-        // anterior) para calcular el offset rotado de un ModelEntity.
-        // portalBlock solo rota en el eje Y (colocacion horizontal), asi que
-        // "Quaternion * Vector3.forward" redondeado al eje cardinal mas
-        // cercano da exactamente el offset de 1 bloque buscado.
-        private static Vector3i GetForwardOffset(World world, Vector3i portalPos)
-        {
-            var blockValue = world.GetBlock(portalPos);
-            var block = blockValue.Block;
-            if (block == null)
+            const int maxScanDown = 32;
+            for (var dy = -1; dy >= -maxScanDown; dy--)
             {
-                // Sin bloque real ahi (portal fantasma/no confirmado todavia):
-                // no hay direccion que calcular, no se aplica ningun offset.
-                return Vector3i.zero;
+                var candidate = portalPos + new Vector3i(0, dy, 0);
+                if (world.CanPlayersSpawnAtPos(candidate.ToVector3(), true))
+                {
+                    return candidate;
+                }
             }
 
-            var forward = block.shape.GetRotation(blockValue) * Vector3.forward;
-            return Mathf.Abs(forward.x) > Mathf.Abs(forward.z)
-                ? new Vector3i(forward.x > 0 ? 1 : -1, 0, 0)
-                : new Vector3i(0, 0, forward.z > 0 ? 1 : -1);
+            // No se encontro espacio valido en el rango escaneado: quedarse
+            // con la posicion original del portal en vez de arriesgarse a
+            // subir/bajar demasiado.
+            return portalPos;
         }
 
         private static void ApplyTravelBuff(EntityPlayer player)
