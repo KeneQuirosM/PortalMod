@@ -135,8 +135,10 @@ cp Harmony/PortalMod.csproj.template Harmony/PortalMod.csproj
 7. Interactúa (tecla **E**) con un portal ya colocado para **renombrarlo**.
    Si le asignas un nuevo tag, el portal anterior (su antiguo par, si lo
    tenía) queda huérfano automáticamente.
-8. Tras cada viaje hay un **cooldown de 5 segundos** antes de poder volver a
-   activar un portal, para evitar loops infinitos de teletransporte.
+8. Tras cada viaje hay un **cooldown** (5 segundos por defecto) antes de
+   poder volver a activar un portal, para evitar loops infinitos de
+   teletransporte. Configurable por servidor entre 0 y 30s — ver
+   `Config/PortalModConfig.xml` (`TeleportCooldownSeconds`).
 9. Al salir de un portal se aplica brevemente el buff `buffPortalTravel`
    (2 segundos), que congela el movimiento y dispara un efecto de
    partículas/sonido de llegada.
@@ -296,6 +298,7 @@ PortalMod/
 │   ├── buffs.xml           buffPortalTravel
 │   ├── sounds.xml          SoundDataNode "guppyKeyUsed" (sonido de activacion)
 │   ├── Localization.csv    Strings en english / spanish (nombre real esperado por el juego)
+│   ├── PortalModConfig.xml Config ajustable por el servidor (cooldown, espera de chunk) — solo lo lee el mod, no el juego
 │   └── XUi_InGame/
 │       ├── windows.xml     Ventana popup "Nombrar portal" (windowPortalTag)
 │       └── xui.xml         window_group que registra windowPortalTag
@@ -305,6 +308,7 @@ PortalMod/
 │   └── src/
 │       ├── API.cs              Punto de entrada IModApi
 │       ├── PortalManager.cs    Registro/vinculacion/cooldown/persistencia/estilo/bioma
+│       ├── PortalConfig.cs     Config ajustable por servidor (cooldown, espera de chunk) leida de Config/PortalModConfig.xml
 │       ├── PortalTeleport.cs   Deteccion de colision y teletransporte
 │       ├── PortalBlockPatch.cs Harmony patches (colocar/activar/destruir)
 │       ├── PortalVisualFX.cs   Luz/particulas por estado + rafagas de teletransporte
@@ -451,6 +455,21 @@ puntos más relevantes:
   `plat:` el fix está activo; si sigue siendo un número corto, ningún
   candidato resolvió y hace falta decompilar el DLL real para encontrar el
   nombre correcto.
+- **Cruce de identidad a mitad de sesión rompía el uso compartido de
+  portales en party — reportado**: consecuencia directa del punto anterior.
+  `PortalIdentity.GetSteamId` puede devolver el `entityId` (fallback)
+  durante los primeros llamados de la sesión y "cruzar" a `plat:...` en
+  cuanto el identificador de plataforma resuelve. Si un jugador colocaba un
+  portal ANTES de ese cruce y se unía a una party DESPUÉS, la migración
+  automática buscaba el portal bajo la key nueva (`plat:...`) pero seguía
+  registrado bajo la vieja (`entityId`) — no encontraba nada que migrar, y
+  el portal nunca pasaba a ser compartido: sus compañeros de party lo veían
+  como el portal de un desconocido. **Corregido**: `PortalManager.
+  ReassignSteamId`, invocado desde `PortalIdentity.GetSteamId` en el
+  momento exacto del cruce, reescribe toda referencia al `entityId` viejo
+  (portales registrados bajo esa key, atribución de dueño original,
+  cooldown, cache de detección de cambios de party) por el identificador
+  nuevo.
 - **Renombrar un portal ya vinculado desconecta el cable de su PAREJA**: es
   consecuencia directa de la limitación de arriba ("swap de bloque = cable
   cortado") combinada con cómo funciona `RenamePortal` — internamente hace
@@ -469,6 +488,21 @@ puntos más relevantes:
   party, esa atribución se pierde para ese portal en particular — al salir
   de la party después de un reinicio, ese portal específico no se migrará
   de vuelta a nadie automáticamente (se queda con la party).
+- **Jugador atascado en una pared / devuelto al origen al llegar — reportado
+  en servidor dedicado real**: `World.GetBlock()` en una celda de un chunk
+  que todavía no terminó de cargar devuelve `BlockValue.Air`, indistinguible
+  de "acá de verdad no hay nada". El cálculo del punto de aterrizaje
+  (`PortalTeleport.FindLandingBlockPos`) confiaba en esa lectura sin
+  verificar si el chunk estaba realmente cargado, así que en servidores con
+  streaming de chunks lento podía "aterrizar" al jugador sobre terreno que
+  en ese momento se leía como aire pero resultaba sólido apenas el chunk
+  terminaba de cargar. **Corregido**: si el chunk destino no está cargado,
+  ya no se escanea en absoluto (se usa la posición del portal sin
+  modificar) — y `PortalTeleport.TryTeleport` ahora espera (con un límite
+  configurable, ver `Config/PortalModConfig.xml` → `MaxChunkWaitSeconds`,
+  default 2s, 0 desactiva la espera) a que el chunk destino esté cargado
+  antes de mover al jugador, sin ningún mensaje de "espera" visible — en el
+  caso normal (chunk ya cargado) el viaje sigue siendo instantáneo.
 
 Ya resueltos (confirmados contra el XML original del mod de assets SCore,
 pendientes solo de probarse en el juego real — ver `TESTING.md`):

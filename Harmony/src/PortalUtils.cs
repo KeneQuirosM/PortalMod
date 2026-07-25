@@ -85,12 +85,37 @@ namespace PortalMod
         // dato este disponible, sin esperar a una reconexion.
         private static readonly Dictionary<int, string> _resolvedStableIdByEntityId = new Dictionary<int, string>();
 
+        // FIX real (Bug reportado — "los miembros de mi party no pueden usar
+        // mis portales"): registra que entityIds llegaron a devolver el
+        // fallback (entityId.ToString()) en ALGUNA llamada anterior a que el
+        // identificador estable resolviera. Necesario para distinguir, en el
+        // momento en que TryResolveStablePlatformId por fin tiene exito, dos
+        // casos MUY distintos:
+        //   a) Primera llamada de la sesion para este entityId y YA resuelve
+        //      estable (dato de plataforma disponible desde el principio) —
+        //      nunca se devolvio el fallback, no hay nada que reasignar.
+        //   b) Se devolvio el fallback en llamadas previas (dato de
+        //      plataforma todavia no sincronizado en ese momento — ver
+        //      comentario de _resolvedStableIdByEntityId) y AHORA recien
+        //      resuelve — esto es un "cruce" real: cualquier registro de
+        //      PortalManager ya hecho bajo el fallback viejo (por ejemplo
+        //      un portal que el jugador coloco en esos primeros segundos)
+        //      queda huerfano de su identidad real a menos que se reasigne
+        //      explicitamente (ver PortalManager.ReassignSteamId).
+        private static readonly HashSet<int> _entityIdsThatUsedFallback = new HashSet<int>();
+
         /// <summary>
         /// Devuelve un identificador unico por jugador usado como clave primaria
         /// en PortalManager para separar los portales de cada jugador. Intenta
         /// primero un identificador de plataforma estable entre sesiones (ver
         /// TryResolveStablePlatformId); si no se puede resolver, cae al
-        /// entityId.ToString() de siempre (ver TRADEOFF documentado ahi).
+        /// entityId.ToString() de siempre (ver TRADEOFF documentado ahi). Si el
+        /// identificador estable resuelve DESPUES de haber devuelto el
+        /// fallback para este mismo jugador en esta sesion (ver FIX real de
+        /// _entityIdsThatUsedFallback), dispara PortalManager.ReassignSteamId
+        /// para que cualquier estado ya registrado bajo el fallback viejo
+        /// (portales, atribucion de dueño original, cooldown, cache de party)
+        /// se mueva al identificador real en vez de quedar huerfano.
         /// </summary>
         public static string GetSteamId(EntityPlayer player)
         {
@@ -108,6 +133,14 @@ namespace PortalMod
             if (!string.IsNullOrEmpty(stableId))
             {
                 _resolvedStableIdByEntityId[player.entityId] = stableId;
+
+                if (_entityIdsThatUsedFallback.Remove(player.entityId))
+                {
+                    var oldFallbackId = player.entityId.ToString();
+                    API.Log($"[PortalMod] PortalIdentity: id de plataforma estable resuelto para entityId={player.entityId} despues de haber usado el fallback ({oldFallbackId} -> {stableId}); reasignando estado en PortalManager.");
+                    PortalManager.Instance.ReassignSteamId(oldFallbackId, stableId);
+                }
+
                 return stableId;
             }
 
@@ -117,7 +150,10 @@ namespace PortalMod
             // recibir un entityId distinto la proxima vez que se conecte, lo
             // que rompe la asociacion de sus portales guardados en
             // PortalManager. Solo se llega aca si ningun candidato de
-            // TryResolveStablePlatformId resolvio nada.
+            // TryResolveStablePlatformId resolvio nada (todavia, o nunca).
+            // Se registra el entityId como "uso el fallback" para poder
+            // detectar el cruce arriba si mas adelante SI llega a resolver.
+            _entityIdsThatUsedFallback.Add(player.entityId);
             return player.entityId.ToString();
         }
 

@@ -85,7 +85,8 @@ namespace PortalMod
         private readonly Dictionary<Vector3i, string> _styles =
             new Dictionary<Vector3i, string>();
 
-        // steamId -> timestamp (Time.time) en el que termina el cooldown de 5s.
+        // steamId -> timestamp (Time.time) en el que termina el cooldown
+        // (duracion configurable, ver CooldownSeconds/PortalConfig.cs).
         // OJO: el cooldown SIEMPRE es por steamId individual, nunca por party
         // (ver GetPortalKey) — es una proteccion contra loops de
         // teletransporte de UN jugador fisico, no una propiedad del portal
@@ -129,7 +130,17 @@ namespace PortalMod
             new Dictionary<string, string>();
 
         private const int MaxPortalsPerTag = 2;
-        public const float CooldownSeconds = 5f;
+
+        // FIX real (Bug reportado — "cooldown fijo de 5s deja al jugador
+        // atascado/devuelto en servidores donde el mundo tarda mas en
+        // cargar"): antes era "const float CooldownSeconds = 5f" — un valor
+        // de COMPILACION, imposible de ajustar sin recompilar el DLL. Ahora
+        // delega a PortalConfig.TeleportCooldownSeconds (leido de Config/
+        // PortalModConfig.xml, ver PortalConfig.cs), configurable por
+        // servidor entre 0 y 30s sin tocar codigo. Se mantiene como
+        // propiedad (no campo) para que cualquier lectura futura del valor
+        // siempre refleje la config actual sin necesitar un setter propio.
+        public static float CooldownSeconds => PortalConfig.TeleportCooldownSeconds;
 
         private bool _dirty;
 
@@ -400,6 +411,118 @@ namespace PortalMod
                     _dirty = true;
                     API.Log($"[PortalMod] Migrando {migratedCount} portales de {fromKey} a {toKey}");
                 }
+            }
+        }
+
+        /// <summary>
+        /// FIX real (Bug reportado — "los miembros de mi party no pueden usar
+        /// mis portales"): PortalIdentity.GetSteamId puede devolver un valor
+        /// DISTINTO para el MISMO jugador fisico a lo largo de una misma
+        /// sesion — empieza devolviendo el fallback inestable
+        /// (EntityPlayer.entityId.ToString()) mientras el identificador de
+        /// plataforma estable todavia no resuelve por reflection, y "cruza"
+        /// a ese identificador estable (prefijo "plat:") en cuanto lo
+        /// consigue (ver PortalUtils.cs). Si el jugador coloco un portal
+        /// ANTES de ese cruce (ownerKey/steamId registrado bajo el fallback,
+        /// ej. "55") y el cruce ocurre despues — sea que se una a una party
+        /// o no — todo el estado interno de PortalManager que todavia
+        /// referencia "55" (el ownerKey del portal en si si seguia
+        /// solitario, o _originalOwnerSteamId si ya se habia migrado a una
+        /// party antes del cruce) queda DESINCRONIZADO del steamId "plat:..."
+        /// que este jugador resuelve de ahi en adelante. Concretamente, una
+        /// union a party DESPUES del cruce dispara
+        /// MigratePortals(fromKey="plat:...", ...) — pero el portal sigue
+        /// registrado bajo el "55" viejo, asi que esa migracion no encuentra
+        /// nada que mover (TryGetValue falla en silencio) y el portal
+        /// jamas pasa a ownerKey de party: los companeros de party ven
+        /// exactamente el mismo bloque que cualquier extraño.
+        ///
+        /// Esta funcion resuelve ese cruce como un evento de primera clase
+        /// (en vez de dejar que MigratePortals falle en silencio buscando
+        /// bajo la key nueva): reescribe TODAS las referencias al steamId
+        /// viejo por el nuevo en cada estructura de PortalManager que pueda
+        /// contenerlo — invocada exclusivamente desde
+        /// PortalIdentity.GetSteamId en el momento exacto del cruce, nunca
+        /// desde otro lugar.
+        /// </summary>
+        public void ReassignSteamId(string oldSteamId, string newSteamId)
+        {
+            if (string.IsNullOrEmpty(oldSteamId) || string.IsNullOrEmpty(newSteamId) || oldSteamId == newSteamId)
+            {
+                return;
+            }
+
+            lock (_lock)
+            {
+                // 1) Si el jugador seguia solitario en el momento del cruce,
+                // sus portales estan registrados DIRECTAMENTE bajo el
+                // steamId viejo como ownerKey personal — mover al nuevo
+                // reusa exactamente la misma logica que cualquier otra
+                // migracion de ownerKey. Si ya estaba en una party antes del
+                // cruce, esto es un no-op seguro (no hay nada registrado
+                // bajo un steamId personal — MigratePortals ya maneja
+                // "fromKey" ausente sin hacer nada).
+                MigratePortals(oldSteamId, newSteamId);
+
+                // 2) "_originalOwnerSteamId" indexa por POSICION, no por
+                // ownerKey — sobrevive intacto a cualquier migracion de
+                // arriba o a una migracion de party anterior a este cruce.
+                // Hay que reescribir CUALQUIER entrada que todavia apunte al
+                // steamId viejo, sin importar bajo que ownerKey (personal o
+                // "party:...") este registrada esa posicion ahora mismo —
+                // de lo contrario, "salir de la party" mas tarde comparara
+                // el steamId ACTUAL (ya "plat:...") contra este valor
+                // desactualizado ("55") y jamas encontrara coincidencia,
+                // dejando ese portal en particular sin devolverse a su
+                // dueño real al salir de la party.
+                List<Vector3i> positionsToRewrite = null;
+                foreach (var kvp in _originalOwnerSteamId)
+                {
+                    if (kvp.Value == oldSteamId)
+                    {
+                        (positionsToRewrite ?? (positionsToRewrite = new List<Vector3i>())).Add(kvp.Key);
+                    }
+                }
+
+                if (positionsToRewrite != null)
+                {
+                    foreach (var pos in positionsToRewrite)
+                    {
+                        _originalOwnerSteamId[pos] = newSteamId;
+                    }
+                }
+
+                // 3) Cache de deteccion de cambios de party
+                // (CheckPartyMembershipChanged) indexado por steamId crudo:
+                // re-indexar en vez de perder el estado (evita un
+                // "primera vez que veo a este jugador" espurio justo
+                // despues del cruce, que solo retrasaria por un ciclo la
+                // deteccion de un cambio de party real en curso).
+                if (_lastKnownPortalKey.TryGetValue(oldSteamId, out var lastKey))
+                {
+                    _lastKnownPortalKey.Remove(oldSteamId);
+                    _lastKnownPortalKey[newSteamId] = lastKey;
+                }
+
+                if (_pendingPartyKey.TryGetValue(oldSteamId, out var pendingKey))
+                {
+                    _pendingPartyKey.Remove(oldSteamId);
+                    _pendingPartyKey[newSteamId] = pendingKey;
+                }
+
+                // 4) Cooldown de teletransporte (regla 7): re-indexar para
+                // que el jugador no "pierda" un cooldown ya en curso (ni,
+                // menos probable pero peor, se le reinicie a 0 justo cuando
+                // deberia seguir bloqueado) solo porque su steamId resuelto
+                // cambio a mitad de sesion.
+                if (_cooldowns.TryGetValue(oldSteamId, out var cooldownUntil))
+                {
+                    _cooldowns.Remove(oldSteamId);
+                    _cooldowns[newSteamId] = cooldownUntil;
+                }
+
+                _dirty = true;
+                API.Log($"[PortalMod] ReassignSteamId: {oldSteamId} -> {newSteamId} (cruce de identidad resuelto, estado interno re-indexado).");
             }
         }
 
@@ -856,7 +979,8 @@ namespace PortalMod
         }
 
         // ========================================================================
-        // COOLDOWN (regla 7: 5 segundos post-teletransporte para evitar loops)
+        // COOLDOWN (regla 7: post-teletransporte para evitar loops — duracion
+        // configurable por servidor, ver CooldownSeconds/PortalConfig.cs)
         // ========================================================================
 
         public bool IsOnCooldown(string steamId)

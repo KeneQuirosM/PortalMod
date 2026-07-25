@@ -20,6 +20,12 @@ namespace PortalMod
             ModInstance = _modInstance;
             Log("Inicializando PortalMod...");
 
+            // Config del servidor (cooldown de teletransporte, espera de
+            // chunk destino) — ver PortalConfig.cs. Se carga temprano, ANTES
+            // de que PortalManager/PortalTeleport puedan usar cualquiera de
+            // estos valores.
+            PortalConfig.Load();
+
             // Diagnostico: Block_OnBlockActivated_Patch (PortalBlockPatch.cs) quedo
             // comentado despues de dos intentos fallidos de adivinar su firma real
             // (AmbiguousMatchException, luego "Undefined target method"). En vez de

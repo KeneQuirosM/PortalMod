@@ -1,0 +1,27 @@
+<!--
+    Config/PortalModConfig.xml — configuracion ajustable por el operador del
+    servidor. A diferencia de blocks.xml/items.xml/etc. (que carga el propio
+    juego), este archivo lo lee unicamente PortalMod (ver Harmony/src/
+    PortalConfig.cs) — si falta, esta corrupto, o algun valor esta fuera de
+    rango, el mod sigue funcionando con los valores por defecto indicados
+    abajo, nunca deja de cargar.
+
+    TeleportCooldownSeconds: segundos de enfriamiento tras usar un portal
+    (evita loops de teletransporte). Default: 5. Rango permitido: 0-30.
+    Si tu servidor tarda en cargar chunks lejanos, subir este valor (hasta
+    30) reduce la chance de que un jugador quede atascado/sea revertido al
+    reaparecer en un destino cuyo chunk todavia esta cargando.
+
+    MaxChunkWaitSeconds: si el chunk del portal DESTINO todavia no esta
+    cargado en el momento de viajar, el mod espera hasta este limite (sin
+    ningun mensaje de "espera" visible — el viaje se sigue sintiendo
+    instantaneo en el caso normal, que es cuando el chunk ya esta cargado)
+    antes de mover al jugador, para no calcular su punto de aterrizaje sobre
+    una lectura de terreno no confiable. Default: 2. Rango permitido: 0-10.
+    0 desactiva esta espera por completo (comportamiento identico al
+    original: siempre instantaneo, sin esperar nunca al chunk).
+-->
+<PortalModConfig>
+    <TeleportCooldownSeconds value="5" />
+    <MaxChunkWaitSeconds value="2" />
+</PortalModConfig>
