@@ -367,9 +367,24 @@ cada uno sigue sin probarse:
       encuentra, falla al cargar el mod con un error claro en el log).
 - [x] `EntityPlayer.PlatformUserIdentifierAbs` no existe — **corregido**
       usando `player.entityId.ToString()` como identificador de jugador
-      (`PortalUtils.cs`). Pendiente: esto NO es estable entre
-      reconexiones/sesiones; probar qué pasa con los portales de un
-      jugador después de que se desconecta y se vuelve a conectar.
+      (`PortalUtils.cs`). Confirmado en reporte real de servidor dedicado:
+      esto NO es estable entre reconexiones/sesiones — cada reconexión
+      rompe la asociación de portales del jugador (aparecen "sin dueño",
+      hay que destruir y volver a colocar el bloque para recuperarlos).
+      **Mitigado** (no confirmado 100%, ver `PortalIdentity.
+      TryResolveStablePlatformId`): antes de caer a `entityId`, se intenta
+      resolver por reflection un identificador de plataforma real
+      (candidatos: `PlatformUserIdentifierAbs`, `PlatformId`,
+      `CrossplatformId`, `UserIdentifier`, `SteamId`, `steamID`, buscados
+      en toda la jerarquía de `EntityPlayer`) — mismo patrón defensivo que
+      `PortalParty.TryGetPartyId`. Si ningún candidato existe en el
+      `Assembly-CSharp.dll` real de V3.0, el mod sigue compilando y cae al
+      comportamiento anterior (`entityId`, con el mismo bug). Pendiente:
+      probar en un servidor real si alguno de los candidatos resuelve
+      (revisar el log — si el ownerKey logueado en `RegisterPortal`
+      empieza con `plat:` en vez de ser un número corto, el fix está
+      activo) y, si no, decompilar `Assembly-CSharp.dll` para confirmar el
+      nombre real y agregarlo a la lista de candidatos.
 - [x] `windowManager.Open(...)` con 4 argumentos no existe — **corregido**
       invocando `Open` por reflection, probando el primer método `Open`
       cuyo primer parámetro sea `string` (`XUiPortalTag.cs`). Pendiente:

@@ -433,6 +433,35 @@ puntos más relevantes:
   origen), pero deja de garantizar estrictamente el máximo de 2 — se
   prefirió esto a rechazar la migración, lo que dejaría un bloque físico ya
   colocado en el mundo sin ningún registro.
+- **Identificador de jugador ("steamId") puede seguir sin ser estable entre
+  sesiones — reportado en servidor dedicado real**: hasta la fecha,
+  `PortalIdentity.GetSteamId` usaba `EntityPlayer.entityId.ToString()` como
+  único identificador (`entityId` NO es estable entre reconexiones — el
+  mismo jugador puede recibir uno distinto la próxima vez que se conecta).
+  Un usuario reportó exactamente el síntoma esperado de esto: **pierde la
+  propiedad de sus portales cada vez que se desconecta**, y tiene que
+  destruirlos y volver a colocarlos para recuperarlos. Se agregó una
+  resolución por reflection de un identificador de plataforma real
+  (Steam64/EOS/etc., varios nombres candidatos — ver `PortalUtils.cs`) que
+  se intenta ANTES de caer a `entityId`, con el mismo patrón defensivo que
+  `PortalParty.cs`. **No se pudo confirmar contra el `Assembly-CSharp.dll`
+  real si alguno de los candidatos existe** — si ninguno resuelve, el mod
+  sigue funcionando exactamente como antes (mismo bug). Revisar el log del
+  servidor: si el `ownerKey` logueado en `RegisterPortal` empieza con
+  `plat:` el fix está activo; si sigue siendo un número corto, ningún
+  candidato resolvió y hace falta decompilar el DLL real para encontrar el
+  nombre correcto.
+- **Renombrar un portal ya vinculado desconecta el cable de su PAREJA**: es
+  consecuencia directa de la limitación de arriba ("swap de bloque = cable
+  cortado") combinada con cómo funciona `RenamePortal` — internamente hace
+  un desregistro + registro del portal que estás renombrando, lo que
+  primero rompe el par (el portal que NO estás tocando queda huérfano y su
+  bloque cambia a la variante inactiva, cortando su cable) y luego, si el
+  nuevo tag encuentra pareja, vuelve a cambiar de bloque. Si el segundo
+  portal del par pertenece a otro miembro de tu party, esto puede
+  desconectar un cable que él tendió sin que vos lo notes ni él sepa por
+  qué. Mitigación práctica mientras tanto: volver a cablear ambos portales
+  después de renombrar uno que ya estaba vinculado.
 - **Atribución de "dueño original" no se persiste a disco**: el índice de
   qué jugador colocó físicamente cada portal (usado para devolver solo tus
   propios portales al salir de una party) vive únicamente en memoria. Si el

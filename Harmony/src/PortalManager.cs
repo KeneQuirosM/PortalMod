@@ -12,9 +12,11 @@ namespace PortalMod
     /// por tag compartida, sin jerarquia madre/hijo.
     ///
     /// Feature "portales por party": los portales se registran bajo un
-    /// "ownerKey" — el steamId personal del jugador (en realidad
-    /// EntityPlayer.entityId.ToString(), ver PortalIdentity.GetSteamId en
-    /// PortalUtils.cs; NO es estable entre sesiones, ver TODO ahi) si no
+    /// "ownerKey" — el steamId personal del jugador (ver
+    /// PortalIdentity.GetSteamId en PortalUtils.cs: intenta primero un
+    /// identificador de plataforma estable por reflection, y solo si
+    /// ninguno resuelve cae a EntityPlayer.entityId.ToString(), que NO es
+    /// estable entre sesiones — ver FIX real y TRADEOFF ahi) si no
     /// esta en ninguna party, o el ID de su party (prefijo "party:") si lo
     /// esta — ver GetPortalKey. Los jugadores de la MISMA party comparten
     /// TODOS sus portales entre si; los de partys distintas (o sin party)
