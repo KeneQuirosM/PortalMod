@@ -69,6 +69,36 @@ namespace PortalMod
         private static readonly Dictionary<string, float> _lastTeleportTime = new Dictionary<string, float>();
         private const float PostTeleportThrottleSeconds = 2f;
 
+        // FIX real (Bug reportado — "cooldown fijo deja al jugador atascado/
+        // devuelto si el mundo tarda mas en cargar"): un teletransporte cuyo
+        // chunk DESTINO todavia no esta cargado se registra aca en vez de
+        // ejecutarse al instante (ver TryTeleport) — ProcessPendingTeleports,
+        // llamado cada Tick(), lo completa apenas el chunk termine de cargar
+        // o, como limite, cuando venza "Deadline" (PortalConfig.
+        // MaxChunkWaitSeconds desde la activacion). Sin mensaje de "espera"
+        // visible: en el caso normal (chunk ya cargado) TryTeleport ejecuta
+        // directo sin pasar por aca, asi que el viaje se sigue sintiendo
+        // instantaneo — esto solo cubre el caso excepcional que causaba el
+        // bug reportado. Independiente de "_lastTeleportTime" de arriba: ese
+        // throttle cierra la ventana de reentrada alrededor de la EJECUCION
+        // real (se fija recien cuando ExecuteTeleport corre, sea al toque o
+        // diferido), mientras que el cooldown de PortalManager (ver
+        // SetCooldown en TryTeleport) ya cubre el reintento desde el
+        // ACTIVACION del portal — ambos mecanismos conviven sin pisarse.
+        private sealed class PendingTeleport
+        {
+            public EntityPlayer Player;
+            public Vector3i OriginBlockPos;
+            public Vector3i DestinationBlockPos;
+            public float Deadline;
+        }
+
+        // Clave: steamId (ver PortalIdentity.GetSteamId) — un jugador solo
+        // puede tener UN teletransporte pendiente a la vez (el cooldown, ya
+        // aplicado en TryTeleport en el momento de encolar, impide activar
+        // un segundo portal mientras el primero sigue pendiente).
+        private static readonly Dictionary<string, PendingTeleport> _pendingTeleports = new Dictionary<string, PendingTeleport>();
+
         public static void Init()
         {
             API.Log("PortalTeleport inicializado.");
@@ -119,6 +149,21 @@ namespace PortalMod
             // ya que OnApplicationQuit nunca se ejecuta en ese caso. Save()
             // ya tiene try/catch propio.
             PortalManager.Instance.MaybeAutoSave();
+
+            try
+            {
+                // Completa los teletransportes que quedaron esperando a que
+                // su chunk destino terminara de cargar (ver TryTeleport/
+                // PendingTeleport arriba). Independiente del loop de
+                // jugadores de abajo: un jugador con un teletransporte
+                // pendiente sigue en cooldown, asi que no vuelve a entrar
+                // por CheckPlayerPortalCollision mientras tanto.
+                ProcessPendingTeleports(world);
+            }
+            catch (Exception e)
+            {
+                API.LogError($"Excepcion en PortalTeleport.ProcessPendingTeleports(): {e}");
+            }
 
             // TODO: verificar en Assembly-CSharp V3.0 el metodo correcto para
             // enumerar jugadores activos en el server/host. Candidatos conocidos
@@ -250,26 +295,6 @@ namespace PortalMod
                 return;
             }
 
-            // FIX real (el teletransporte debia sentirse instantaneo, estilo
-            // Valheim — pedido explicito: "no delays, no buffs, no 'please
-            // wait'"): antes se bloqueaba el viaje con un mensaje si
-            // World.IsChunkAreaLoaded fallaba en el destino. Decompilando el
-            // propio mecanismo de teletransporte del juego
-            // (EntityPlayer.Teleport, usado por EntityPlayerLocal.
-            // TeleportToPosition para respawn/cama/etc.) se confirmo que
-            // VANILLA NO espera a que el chunk este cargado en absoluto: solo
-            // llama SetPosition(_pos) de inmediato y dispara
-            // Respawn(RespawnType.Teleport) — el streaming de chunks
-            // alrededor del jugador se encarga solo, despues, del pop-in
-            // (TeleportToPosition incluso relanza una correccion de altura
-            // en un coroutine que espera a "Spawned", no a que el chunk este
-            // cargado). No existe ningun "RequestQueuedChunk" en el
-            // Assembly-CSharp.dll real (se confirmo por reflection — 0
-            // coincidencias); el propio juego resuelve esto sin ninguna
-            // espera sincronica. Se elimina el bloqueo aca para igualar ese
-            // comportamiento: el viaje ya no se cancela por chunk sin
-            // cargar, se ejecuta siempre.
-            //
             // Feature "requiere electricidad": el portal de ORIGEN (el que el
             // jugador esta pisando/activando) necesita estar realmente
             // cableado a una fuente de energia encendida — portalBlock es
@@ -285,7 +310,137 @@ namespace PortalMod
                 return;
             }
 
-            ExecuteTeleport(player, steamId, originPos, destinationBlockPos);
+            // El cooldown arranca AHORA (activacion del portal), no recien al
+            // llegar — sea que el viaje se ejecute instantaneo o quede
+            // pendiente esperando el chunk destino (ver mas abajo). Esto es
+            // lo que evita que el chequeo de colision del ORIGEN (el jugador
+            // sigue fisicamente parado ahi mientras el teletransporte esta
+            // pendiente) dispare TryTeleport de nuevo en cada frame — el
+            // IsOnCooldown de arriba en CheckPlayerPortalCollision ya lo
+            // bloquea. Se movio aca desde ExecuteTeleport a proposito: antes
+            // solo se aplicaba DESPUES de moverse, lo que dejaba una ventana
+            // sin cooldown durante toda la espera pendiente.
+            PortalManager.Instance.SetCooldown(steamId);
+
+            // FIX real (Bug reportado — "cooldown fijo deja al jugador
+            // atascado en una pared o lo devuelve al origen si el mundo
+            // tarda mas en cargar"): decompilando el propio mecanismo de
+            // teletransporte del juego (EntityPlayer.Teleport, usado por
+            // EntityPlayerLocal.TeleportToPosition para respawn/cama/etc.) ya
+            // se habia confirmado en una sesion anterior que VANILLA NO
+            // espera a que el chunk este cargado — llama SetPosition de
+            // inmediato y deja que el streaming de chunks se encargue del
+            // pop-in despues. Eso sigue siendo cierto y sigue siendo el
+            // comportamiento por defecto aca (ver "chunkReady" abajo: el
+            // caso comun, chunk ya cargado, ejecuta instantaneo exactamente
+            // igual que antes). El problema reportado es OTRO: World.
+            // GetBlock() en un chunk sin cargar devuelve BlockValue.Air
+            // indistinguible de "aca no hay nada real" (ver FIX real en
+            // FindLandingBlockPos), asi que si el chunk destino NO esta
+            // cargado, la logica de aterrizaje de este mod (FindLandingBlockPos,
+            // que vanilla ni siquiera tiene) puede calcular mal el punto de
+            // aparicion — de ahi "atascado en una pared" (aterrizo sobre una
+            // lectura de aire que en realidad era terreno solido sin cargar
+            // todavia). No existe ningun "RequestQueuedChunk" en el
+            // Assembly-CSharp.dll real (confirmado por reflection en la
+            // sesion anterior) para forzar la carga, asi que la unica opcion
+            // real es ESPERAR (con un limite acotado, configurable via
+            // PortalConfig.MaxChunkWaitSeconds, para no colgarse si el chunk
+            // jamas llega a cargar) a que World.IsChunkAreaLoaded confirme
+            // que ya se puede confiar en una lectura de bloque real ahi,
+            // antes de calcular el aterrizaje y mover al jugador — sin
+            // mostrar ningun mensaje de "espera" (la espera tipica es
+            // imperceptible: el chunk de un portal ya visitado suele estar
+            // cargado o cargar en un frame o dos).
+            var world = GameManager.Instance != null ? GameManager.Instance.World : null;
+            var chunkReady = world == null || PortalConfig.MaxChunkWaitSeconds <= 0f ||
+                world.IsChunkAreaLoaded(destinationBlockPos.x, destinationBlockPos.y, destinationBlockPos.z);
+
+            if (chunkReady)
+            {
+                ExecuteTeleport(player, steamId, originPos, destinationBlockPos);
+                return;
+            }
+
+            _pendingTeleports[steamId] = new PendingTeleport
+            {
+                Player = player,
+                OriginBlockPos = originPos,
+                DestinationBlockPos = destinationBlockPos,
+                Deadline = Time.time + PortalConfig.MaxChunkWaitSeconds
+            };
+
+            API.Log($"[PortalMod] Teletransporte diferido: steamId={steamId} destino={destinationBlockPos} (chunk todavia no cargado; esperando hasta {PortalConfig.MaxChunkWaitSeconds}s antes de ejecutar igual).");
+        }
+
+        /// <summary>
+        /// Completa los teletransportes encolados por TryTeleport porque su
+        /// chunk destino todavia no estaba cargado en el momento de la
+        /// activacion — llamado desde Tick() en cada frame. Ejecuta apenas
+        /// el chunk termina de cargar, o al vencer "Deadline" (lo que ocurra
+        /// primero) para no dejar al jugador esperando indefinidamente si
+        /// ese chunk en particular nunca llega a cargar.
+        /// </summary>
+        private static void ProcessPendingTeleports(World world)
+        {
+            if (_pendingTeleports.Count == 0)
+            {
+                return;
+            }
+
+            // AUDITORIA (manejo de errores): no se puede remover de
+            // _pendingTeleports mientras se enumera — se junta la lista de
+            // claves a remover y se aplica despues, mismo patron que
+            // PortalManager.Load()/otros loops de este mod que modifican una
+            // coleccion en base a lo que encuentran mientras la recorren.
+            List<string> toRemove = null;
+
+            foreach (var kvp in _pendingTeleports)
+            {
+                var pending = kvp.Value;
+
+                try
+                {
+                    // Jugador se desconecto (o murio) mientras esperaba: no
+                    // tiene sentido teletransportar un EntityPlayer ya
+                    // invalido — se descarta sin ejecutar.
+                    if (pending.Player == null || !pending.Player.IsAlive())
+                    {
+                        (toRemove ?? (toRemove = new List<string>())).Add(kvp.Key);
+                        continue;
+                    }
+
+                    var chunkReady = world.IsChunkAreaLoaded(
+                        pending.DestinationBlockPos.x, pending.DestinationBlockPos.y, pending.DestinationBlockPos.z);
+
+                    if (!chunkReady && Time.time < pending.Deadline)
+                    {
+                        // Seguir esperando: seguira aca hasta el proximo Tick().
+                        continue;
+                    }
+
+                    if (!chunkReady)
+                    {
+                        API.LogWarning($"[PortalMod] Teletransporte pendiente para steamId={kvp.Key}: se agoto la espera ({PortalConfig.MaxChunkWaitSeconds}s) y el chunk destino {pending.DestinationBlockPos} sigue sin cargar; se ejecuta igual (FindLandingBlockPos usara la posicion del portal sin escanear, ver FIX real ahi).");
+                    }
+
+                    ExecuteTeleport(pending.Player, kvp.Key, pending.OriginBlockPos, pending.DestinationBlockPos);
+                    (toRemove ?? (toRemove = new List<string>())).Add(kvp.Key);
+                }
+                catch (Exception e)
+                {
+                    API.LogError($"Excepcion completando teletransporte pendiente para steamId={kvp.Key}: {e}");
+                    (toRemove ?? (toRemove = new List<string>())).Add(kvp.Key);
+                }
+            }
+
+            if (toRemove != null)
+            {
+                foreach (var key in toRemove)
+                {
+                    _pendingTeleports.Remove(key);
+                }
+            }
         }
 
         private static void ExecuteTeleport(EntityPlayer player, string steamId, Vector3i originBlockPos, Vector3i destinationBlockPos)
@@ -369,7 +524,13 @@ namespace PortalMod
             // tanto en origen como en destino.
             PortalVisualFX.SpawnTeleportBurst(destinationBlockPos);
 
-            PortalManager.Instance.SetCooldown(steamId);
+            // El cooldown YA se aplico en TryTeleport, en el momento de la
+            // activacion (ver comentario ahi) — no volver a aplicarlo aca
+            // pisaria con un timestamp MAS TARDE (Time.time de este
+            // instante, potencialmente varios segundos despues de la
+            // activacion si el teletransporte quedo pendiente esperando el
+            // chunk, ver ProcessPendingTeleports), extendiendo el cooldown
+            // real mas alla de lo configurado.
             ApplyTravelBuff(player);
 
             API.Log($"Teletransporte ejecutado: steamId={steamId} -> {destinationBlockPos}");
@@ -429,6 +590,32 @@ namespace PortalMod
             var world = GameManager.Instance != null ? GameManager.Instance.World : null;
             if (world == null)
             {
+                return portalPos;
+            }
+
+            // FIX real (Bug reportado — "el jugador queda atascado en una
+            // pared" al llegar): World.GetBlock() en una celda de un chunk
+            // que TODAVIA no esta cargado devuelve BlockValue.Air —
+            // exactamente el mismo valor que "aca de verdad no hay nada"
+            // (mismo caveat ya confirmado y documentado para esta API en
+            // PortalManager.CheckPortalBlockAt y PortalPower.HasNearbyPower).
+            // World.CanPlayersSpawnAtPos (usado por el scan de abajo)
+            // termina leyendo ese mismo bloque real — sin este chequeo, el
+            // scan podria confiar con total seguridad en una posicion cuyo
+            // terreno real (una vez el chunk termine de cargar) resulte
+            // solido, dejando al jugador incrustado en el instante en que el
+            // chunk hace pop-in. Si el chunk del portal destino no esta
+            // cargado, no se escanea en absoluto: se devuelve la posicion
+            // original del portal sin modificar (mas seguro que aterrizar
+            // sobre una lectura no confiable). PortalTeleport.TryTeleport ya
+            // intenta evitar llegar a este caso esperando (con limite
+            // configurable, ver PortalConfig.MaxChunkWaitSeconds) a que el
+            // chunk destino este cargado antes de ejecutar el teletransporte
+            // — este chequeo es la red de seguridad final para cuando ese
+            // limite se agota igual sin que el chunk haya cargado.
+            if (!world.IsChunkAreaLoaded(portalPos.x, portalPos.y, portalPos.z))
+            {
+                API.LogWarning($"[PortalMod] FindLandingBlockPos: chunk destino en {portalPos} todavia no cargado; se usa la posicion del portal sin escanear (evita aterrizar sobre una lectura de terreno no confiable).");
                 return portalPos;
             }
 
