@@ -104,6 +104,34 @@ cp Harmony/PortalMod.csproj.template Harmony/PortalMod.csproj
    `UnityEngine.CoreModule.dll` y `0Harmony.dll` existen dentro de la carpeta
    `Managed` detectada.
 
+## Publicación de releases (Nexus Mods)
+
+`.github/workflows/nexus-release.yml` se dispara automáticamente al
+**publicar un Release de GitHub** (no en drafts/pre-releases): descarga el
+`.zip`/`.rar` adjunto al release, intenta subirlo a la página del mod en
+Nexus Mods (`7daystodie`, mod
+[11298](https://www.nexusmods.com/7daystodie/mods/11298)) usando la [Upload
+API oficial de Nexus Mods](https://www.nexusmods.com/news/15454) (en open
+beta), y manda un aviso a Discord con el link del release — sea que la
+subida a Nexus haya funcionado, fallado, o todavía no esté configurada.
+
+**Por qué hay un aviso de Discord además de la subida automática**: la
+Upload API de Nexus Mods es de acceso restringido (beta orientada a
+"Verified Mod Authors") y **no puede crear una página de mod ni un primer
+archivo desde cero** — solo agrega una versión nueva a un archivo que ya
+subiste una vez a mano desde la web. El detalle completo de esta
+limitación, y de qué hacer si la subida automática todavía no está
+disponible, está documentado en los comentarios de cabecera del propio
+workflow.
+
+**Configuración necesaria** (Settings → Secrets and variables → Actions):
+
+| Tipo     | Nombre                | Notas                                                                                                    |
+|----------|------------------------|-----------------------------------------------------------------------------------------------------------|
+| Secret   | `NEXUS_API_KEY`        | API key personal de tu cuenta de Nexus Mods.                                                              |
+| Variable | `NEXUS_FILE_ID`        | ID del "file group" ya creado a mano en la pestaña Files del mod (ver comentarios del workflow) — **sin esto, el workflow salta la subida a Nexus y solo avisa por Discord**. |
+| Secret   | `DISCORD_WEBHOOK_URL`  | Opcional. Sin esto, el workflow no manda ningún aviso externo (solo queda el resumen en la pestaña Actions). |
+
 ## Cómo usar el mod (in-game)
 
 1. Craftea uno de los **6 estilos de portal** en una **mesa de trabajo**

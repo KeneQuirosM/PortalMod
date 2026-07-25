@@ -1,0 +1,300 @@
+# .github/workflows/nexus-release.yml
+#
+# Al publicar un Release de GitHub, sube el .zip/.rar adjunto a Nexus Mods
+# (juego "7daystodie", mod 11298) y avisa por Discord.
+#
+# ============================================================================
+# INVESTIGACION (API de Nexus Mods, julio 2026) — LEER ANTES DE TOCAR ESTO
+# ============================================================================
+#
+# La API PUBLICA "clasica" de Nexus Mods (api.nexusmods.com/v1, la
+# documentada historicamente en https://app.swaggerhub.com/apis/NexusMods/)
+# es de SOLO LECTURA: sirve para consultar info de mods, listar archivos,
+# endorsements, etc. — NUNCA soporto subir archivos. Cualquier workflow que
+# intente subir directo contra esa API con un simple `curl -F file=@...`
+# fallaria: ese endpoint no existe.
+#
+# Nexus Mods lanzo por separado una "Upload API" nueva (v3) en OPEN BETA
+# (anuncio oficial: https://www.nexusmods.com/news/15454 — "Upload API Open
+# Beta Now Live!"). Hay una GitHub Action oficial que la envuelve:
+# https://github.com/Nexus-Mods/upload-action (usada abajo, pineada a
+# v1.0.0-beta.9 — segui siendo beta al momento de escribir esto, revisar si
+# hay un tag mas nuevo/estable antes de asumir que el pineado sigue siendo
+# el correcto).
+#
+# LIMITACIONES REALES confirmadas contra el anuncio oficial y el README de
+# esa Action — motivo por el que este workflow NO puede ser un simple
+# "subi este zip a Nexus" sin configuracion previa:
+#
+#   1. La Upload API NO puede crear una pagina de mod nueva ni un primer
+#      archivo desde cero. Necesita que la pagina del mod (11298) YA exista
+#      en nexusmods.com/7daystodie/mods/11298 y que YA tengas subido a mano,
+#      al menos una vez desde la web, un archivo dentro de un "file group"
+#      (por ejemplo la seccion "Main Files"). La Action solo AGREGA una
+#      version nueva a ESE file group existente — no reemplaza el primer
+#      upload manual.
+#   2. Esa Action pide un "file_id" (el ID de ese file group ya creado, NO
+#      el ID del mod) como input obligatorio — se consigue en la pagina
+#      publica del mod, pestaña "Files" -> "API Info", o en el menu de
+#      edicion de "Manage Files". Este workflow lo espera en la variable de
+#      repo NEXUS_FILE_ID (ver mas abajo) — sin configurarla, el paso de
+#      subida a Nexus se salta solo (no rompe el workflow) y unicamente se
+#      manda el aviso de Discord.
+#   3. El acceso a la beta en si: el anuncio dice que el beta inicial estuvo
+#      enfocado en "Verified Mod Authors" que ya pasaron un testeo cerrado.
+#      No hay forma de confirmar desde aca si la cuenta dueña de
+#      NEXUS_API_KEY ya tiene acceso — si no lo tiene, el paso de subida
+#      falla en runtime con un error de la propia API (401/403), y el
+#      workflow igual continua al aviso de Discord (ver
+#      "continue-on-error" abajo) en vez de dejar el release sin avisar.
+#
+# Por estos 3 puntos, la "alternativa viable" pedida en la tarea (Discord)
+# NO es solo un plan B teorico: es el mecanismo real que cubre el caso
+# (bastante probable, sobre todo la primera vez que se use este workflow)
+# de que la subida automatica todavia no este disponible para este mod/
+# cuenta. El paso de Discord corre SIEMPRE (si esta configurado el secret),
+# con un mensaje distinto segun si la subida a Nexus funciono o no.
+#
+# Fuentes revisadas:
+#   - https://www.nexusmods.com/news/15454 (anuncio oficial de la Upload API)
+#   - https://github.com/Nexus-Mods/upload-action (Action oficial + README)
+#   - https://www.nexusmods.com/news/13921 (anuncio original de la API v1,
+#     de solo lectura, para contexto historico de por que no alcanzaba)
+#
+# ============================================================================
+# CONFIGURACION NECESARIA (Settings -> Secrets and variables -> Actions)
+# ============================================================================
+#   Secrets:
+#     - NEXUS_API_KEY        (ya provista segun la tarea)
+#     - DISCORD_WEBHOOK_URL  (opcional — si falta, se salta el aviso y solo
+#                              queda el resumen en GITHUB_STEP_SUMMARY)
+#   Variables:
+#     - NEXUS_FILE_ID        (ver punto 2 arriba — obligatoria para que la
+#                              subida automatica funcione; sin ella el
+#                              workflow no falla, solo avisa por Discord)
+#
+name: Publicar release en Nexus Mods
+
+on:
+  release:
+    types: [published]
+
+# Evita que dos publicaciones/ediciones rapidas del mismo release disparen
+# dos subidas en paralelo contra el mismo file group de Nexus.
+concurrency:
+  group: nexus-release-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # Puramente informativos (armar el link a la pagina del mod en los
+  # mensajes de abajo) — el v3 Upload API de Nexus NO los pide como
+  # parametro, el "file_id" (ver NEXUS_FILE_ID) ya identifica el mod
+  # correcto del lado de Nexus.
+  NEXUS_GAME_DOMAIN: 7daystodie
+  NEXUS_MOD_ID: "11298"
+
+jobs:
+  publish-to-nexus:
+    # No auto-publicar pre-releases (beta/RC) a Nexus sin revision manual.
+    # Sacar esta condicion si se prefiere que TODO release publicado suba.
+    if: github.event.release.prerelease == false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el asset del release (.zip o .rar)
+        id: download_asset
+        env:
+          # AUDITORIA (inyeccion de comandos): nunca se interpola
+          # "${{ github.event.release.* }}" directo dentro de un bloque
+          # "run:" — el body/tag de un release lo puede escribir cualquiera
+          # con permiso de crear releases, y ese texto se sustituye ANTES de
+          # ejecutar el script (no como variable de shell), asi que
+          # contenido malicioso ahi podria inyectar comandos arbitrarios.
+          # Se pasa todo por variables de entorno (expandidas de forma
+          # segura por el shell en tiempo de ejecucion) en cada paso que
+          # necesita este tipo de datos.
+          TAG_NAME: ${{ github.event.release.tag_name }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$RUNNER_TEMP/nexus-asset"
+          cd "$RUNNER_TEMP/nexus-asset"
+
+          gh release download "$TAG_NAME" \
+            --repo "$REPO" \
+            --pattern "*.zip" \
+            --pattern "*.rar" \
+            --dir .
+
+          # El release puede traer un .zip O un .rar (segun la tarea) — se
+          # acepta cualquiera de los dos, pero se exige que haya EXACTAMENTE
+          # uno adjunto: cero significa "nadie subio el build todavia" (no
+          # hay nada que publicar) y mas de uno es ambiguo (que archivo es
+          # "el" mod?) — mejor fallar ruidosamente en ambos casos que
+          # adivinar.
+          mapfile -t assets < <(find . -maxdepth 1 -type f \( -iname '*.zip' -o -iname '*.rar' \) | sort)
+
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "::error::El release '$TAG_NAME' no tiene ningun archivo .zip ni .rar adjunto."
+            exit 1
+          fi
+
+          if [ "${#assets[@]}" -gt 1 ]; then
+            echo "::error::El release '$TAG_NAME' tiene mas de un archivo .zip/.rar adjunto (${assets[*]}). Este workflow espera un unico archivo de mod por release."
+            exit 1
+          fi
+
+          asset_name="$(basename "${assets[0]}")"
+          asset_path="$(pwd)/$asset_name"
+
+          echo "asset_path=$asset_path" >> "$GITHUB_OUTPUT"
+          echo "asset_name=$asset_name" >> "$GITHUB_OUTPUT"
+
+      - name: Resolver version desde el tag
+        id: version
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          # Nexus espera un numero de version "limpio" (ej. "1.1.0"), no el
+          # tag de git tal cual (ej. "v1.1.0") — se saca el prefijo "v" si
+          # esta, sin tocar nada mas del string.
+          version="${TAG_NAME#v}"
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Subir a Nexus Mods (Upload API oficial, open beta)
+        # Se salta solo (sin romper el workflow) si todavia no se configuro
+        # NEXUS_FILE_ID — ver el bloque de comentarios de arriba sobre por
+        # que ese valor no se puede resolver automaticamente.
+        if: ${{ vars.NEXUS_FILE_ID != '' }}
+        id: nexus_upload
+        # "continue-on-error": si la subida falla en runtime (por ejemplo
+        # la cuenta detras de NEXUS_API_KEY todavia no tiene acceso a la
+        # beta, o Nexus rechaza el archivo), el release de GitHub ya se
+        # publico igual — se prefiere seguir hasta el aviso de Discord (que
+        # informa el fallo con el link para subirlo a mano) antes que dejar
+        # el job entero en rojo sin ningun aviso.
+        continue-on-error: true
+        uses: Nexus-Mods/upload-action@v1.0.0-beta.9
+        with:
+          api_key: ${{ secrets.NEXUS_API_KEY }}
+          file_id: ${{ vars.NEXUS_FILE_ID }}
+          # NOTA: el README de la Action llama a este input "filename" pero,
+          # a juzgar por el ejemplo oficial (zippean un directorio y pasan
+          # ESE archivo), lo que espera es una RUTA a un archivo en disco
+          # dentro del runner, no solo un nombre — se le pasa la ruta
+          # absoluta resuelta en el paso de descarga. Verificar contra
+          # dist/index.js de la Action (no revisado aca) si esto cambia de
+          # comportamiento en una version mas nueva.
+          filename: ${{ steps.download_asset.outputs.asset_path }}
+          display_name: ${{ steps.download_asset.outputs.asset_name }}
+          version: ${{ steps.version.outputs.value }}
+          description: ${{ github.event.release.body }}
+          category: main
+          update_mod_version: true
+          archive_existing_version: true
+
+      - name: Avisar si falta configurar NEXUS_FILE_ID
+        if: ${{ vars.NEXUS_FILE_ID == '' }}
+        run: |
+          echo "::warning::NEXUS_FILE_ID no esta configurado (Settings > Secrets and variables > Actions > Variables) — se salteo la subida automatica a Nexus Mods. Conseguilo en la pestaña Files del mod (https://www.nexusmods.com/${NEXUS_GAME_DOMAIN}/mods/${NEXUS_MOD_ID}?tab=files) -> 'API Info' de un archivo ya subido, o desde 'Manage Files'. Mientras tanto, el release solo se anuncia por Discord con el link para subirlo a mano."
+
+      - name: Avisar por Discord (respaldo + anuncio del release)
+        # Corre siempre que haya un webhook configurado, sin importar si la
+        # subida a Nexus se ejecuto, fallo, o se salteo por falta de
+        # NEXUS_FILE_ID — es la "alternativa viable" pedida en la tarea
+        # para el caso en que la subida automatica todavia no sea posible.
+        if: ${{ secrets.DISCORD_WEBHOOK_URL != '' }}
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          RELEASE_NAME: ${{ github.event.release.name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_URL: ${{ github.event.release.html_url }}
+          RELEASE_BODY: ${{ github.event.release.body }}
+          ASSET_NAME: ${{ steps.download_asset.outputs.asset_name }}
+          MOD_PAGE_URL: https://www.nexusmods.com/${{ env.NEXUS_GAME_DOMAIN }}/mods/${{ env.NEXUS_MOD_ID }}
+          # "outcome" (no "conclusion"): con continue-on-error:true,
+          # "conclusion" siempre da "success" aunque el paso haya fallado —
+          # "outcome" es el resultado REAL antes de aplicar continue-on-error.
+          # Siempre tiene un valor ("success"/"failure"/"skipped"/
+          # "cancelled") para un step referenciado en el mismo job, incluso
+          # si se salteo por su propio "if:" — no hace falta un fallback.
+          NEXUS_OUTCOME: ${{ steps.nexus_upload.outcome }}
+        run: |
+          set -euo pipefail
+
+          case "$NEXUS_OUTCOME" in
+            success)
+              status_line="✅ Subido automaticamente a Nexus Mods."
+              ;;
+            failure)
+              status_line="⚠️ La subida automatica a Nexus Mods FALLO (revisar el log del workflow) — subilo a mano por ahora."
+              ;;
+            *)
+              status_line="ℹ️ Subida automatica a Nexus Mods no configurada todavia (falta NEXUS_FILE_ID) — subilo a mano por ahora."
+              ;;
+          esac
+
+          # Discord rechaza cualquier "content" de mas de 2000 caracteres
+          # (error "Invalid Form Body") — un changelog largo no debe tumbar
+          # el aviso entero, se recorta con un aviso visible.
+          max_changelog_len=1500
+          if [ "${#RELEASE_BODY}" -gt "$max_changelog_len" ]; then
+            RELEASE_BODY="${RELEASE_BODY:0:$max_changelog_len}... (truncado, ver el release completo en el link de arriba)"
+          fi
+
+          # "printf %s" en vez de un string multilinea literal: cada "%s" se
+          # sustituye tal cual, sin volver a interpretar escapes ni permitir
+          # que el contenido (texto libre del release, puede traer % o \)
+          # rompa el formato. Se arma en una variable en vez de escribir las
+          # lineas sueltas dentro del bloque YAML "run: |" para no depender
+          # de que cada linea intermedia mantenga la indentacion del bloque.
+          content=$(printf '**Nuevo release de PortalMod: %s**\n%s\n\n📦 Archivo: `%s`\n📝 Release: %s\n🔗 Pagina del mod en Nexus: %s\n\n**Changelog:**\n%s' \
+            "${RELEASE_NAME:-$RELEASE_TAG}" "$status_line" "$ASSET_NAME" "$RELEASE_URL" "$MOD_PAGE_URL" "$RELEASE_BODY")
+
+          # jq --arg escapa comillas/saltos de linea/etc. por nosotros —
+          # nunca se arma el JSON pegando strings a mano.
+          payload=$(jq -n --arg content "$content" '{content: $content}')
+
+          curl --fail --silent --show-error \
+            -H "Content-Type: application/json" \
+            -d "$payload" \
+            "$DISCORD_WEBHOOK_URL"
+
+      - name: Resumen
+        if: always()
+        env:
+          NEXUS_OUTCOME: ${{ steps.nexus_upload.outcome }}
+          DISCORD_CONFIGURED: ${{ secrets.DISCORD_WEBHOOK_URL != '' }}
+          # Ver AUDITORIA en el paso "Descargar el asset" sobre por que
+          # esto se pasa por env en vez de interpolarse directo en el "run:".
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          {
+            echo "### Publicacion en Nexus Mods — $RELEASE_TAG"
+            echo ""
+            echo "- Subida a Nexus Mods: \`$NEXUS_OUTCOME\`"
+            echo "- Aviso por Discord enviado: \`$DISCORD_CONFIGURED\`"
+            echo ""
+            echo "Si la subida a Nexus no se ejecuto o fallo, subi el archivo a mano en:"
+            echo "https://www.nexusmods.com/${NEXUS_GAME_DOMAIN}/mods/${NEXUS_MOD_ID}?tab=files"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Marcar el job como fallido si la subida a Nexus fallo de verdad
+        # Distincion a proposito: "skipped" (todavia no se configuro
+        # NEXUS_FILE_ID) es un estado ESPERADO mientras tanto — no debe
+        # ensuciar el historial de Actions con una X roja por algo que ya
+        # se explica solo en el warning del paso correspondiente. "failure"
+        # (la Action SI corrio pero Nexus la rechazo — API key sin acceso a
+        # la beta, file_id invalido, archivo rechazado, etc.) es un
+        # problema real que conviene que se vea como fallo en la UI de
+        # GitHub, aunque el aviso de Discord ya haya salido en el paso
+        # anterior (el release en si sigue publicado en GitHub igual).
+        if: ${{ steps.nexus_upload.outcome == 'failure' }}
+        run: |
+          echo "::error::La subida a Nexus Mods fallo — revisa el log del paso 'Subir a Nexus Mods (Upload API oficial, open beta)' arriba."
+          exit 1
