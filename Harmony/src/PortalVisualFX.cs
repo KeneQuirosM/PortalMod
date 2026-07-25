@@ -242,6 +242,8 @@ namespace PortalMod
 
             _ambientTickCount++;
 
+            var world = GameManager.Instance != null ? GameManager.Instance.World : null;
+
             // AUDITORIA (manejo de errores): GetAllPortalPositions() ya
             // devuelve una copia (snapshot) segura para enumerar (ver FIX en
             // PortalManager.cs). Cada posicion se procesa en su propio
@@ -251,6 +253,29 @@ namespace PortalMod
             {
                 try
                 {
+                    // FIX real (Bug: portal destruido por una via que no
+                    // dispara Block_OnBlockDestroyedBy_Patch — comando de
+                    // admin/consola que reemplaza el bloque directo,
+                    // regeneracion de chunk, u otro mod tocando el mundo —
+                    // quedaba "fantasma": su posicion/tag seguian ocupados
+                    // en PortalManager para siempre, aunque el bloque real ya
+                    // no existiera). Red de seguridad periodica: si el chunk
+                    // esta cargado y el bloque real en esa posicion ya NO es
+                    // un portalBlock (ninguna variante), se desregistra aca.
+                    // El path normal (Block_OnBlockDestroyedBy_Patch) sigue
+                    // siendo el primario/instantaneo para destruccion por
+                    // daño real — esto solo cubre lo que se le escapa.
+                    if (!IsPortalBlockStillPresent(world, pos))
+                    {
+                        if (PortalManager.Instance.TryGetPortalRef(pos, out var staleRef))
+                        {
+                            API.LogWarning($"[PortalMod] WRN portal en {pos} (tag='{staleRef.Tag}') ya no tiene un portalBlock real en el mundo — desregistrando (sweep de AmbientTick).");
+                            PortalManager.Instance.UnregisterPortal(staleRef.OwnerKey, pos);
+                        }
+
+                        continue;
+                    }
+
                     // Leer el estado de energia real (TileEntityPowered.IsPowered,
                     // ver PortalPower.cs) aqui es seguro: solo decide que
                     // particula disparar, nunca toca el BlockValue.
@@ -270,6 +295,23 @@ namespace PortalMod
                     API.LogError($"Excepcion en AmbientTick para portal en {pos}: {e}");
                 }
             }
+        }
+
+        // Ver FIX real en AmbientTick sobre por que existe este chequeo.
+        // world.GetBlock() decompilado confirma que devuelve BlockValue.Air
+        // tanto para "aire real" como para "chunk sin cargar" (mismo patron
+        // ya documentado en PortalManager.CheckPortalBlockAt) — sin
+        // World.IsChunkAreaLoaded de por medio, esto desregistraria a ciegas
+        // portales validos en chunks lejanos que el servidor/cliente
+        // simplemente no tiene cargados todavia.
+        private static bool IsPortalBlockStillPresent(World world, Vector3i pos)
+        {
+            if (world == null || !world.IsChunkAreaLoaded(pos.x, pos.y, pos.z))
+            {
+                return true;
+            }
+
+            return PortalBlockPatch.IsPortalBlock(world.GetBlock(pos));
         }
 
         private static void SpawnAmbientParticle(Vector3i blockPos, bool intense)
