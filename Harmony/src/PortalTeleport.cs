@@ -51,6 +51,24 @@ namespace PortalMod
         private static readonly Dictionary<string, float> _lastPartyCheckTime = new Dictionary<string, float>();
         private const float PartyCheckThrottleSeconds = 5f;
 
+        // FIX real (Bug: doble teletransporte para el mismo jugador en el
+        // mismo tick — log real: "Teletransporte ejecutado: steamId=171 ->
+        // 178,61,777" seguido inmediatamente de otro a "165,61,778", 1 bloque
+        // de diferencia — riesgo de duplicacion de items si algo del juego
+        // reacciona al movimiento/posicion dos veces). El cooldown de
+        // PortalManager (5s, ver PortalManager._cooldowns) ya se chequea mas
+        // abajo, pero solo se aplica DESPUES de que ExecuteTeleport llega
+        // hasta el final (SetCooldown se llama ahi) — cualquier ventana de
+        // reentrada entre "decidimos teletransportar" y "terminamos de
+        // ejecutar" podia dejar pasar una segunda activacion antes de que el
+        // cooldown quedara escrito. Se agrega un throttle propio, MAS CORTO
+        // (2s) y MAS TEMPRANO (primero que cualquier otro chequeo de este
+        // metodo, incluido el de PortalManager), fijado al toque en
+        // ExecuteTeleport ANTES de hacer cualquier otra cosa — mismo patron
+        // Dictionary&lt;string,float&gt; + Time.time que el resto de esta clase.
+        private static readonly Dictionary<string, float> _lastTeleportTime = new Dictionary<string, float>();
+        private const float PostTeleportThrottleSeconds = 2f;
+
         // FIX real (Bug reportado — "cooldown fijo deja al jugador atascado/
         // devuelto si el mundo tarda mas en cargar"): un teletransporte cuyo
         // chunk DESTINO todavia no esta cargado se registra aca en vez de
@@ -61,7 +79,12 @@ namespace PortalMod
         // visible: en el caso normal (chunk ya cargado) TryTeleport ejecuta
         // directo sin pasar por aca, asi que el viaje se sigue sintiendo
         // instantaneo — esto solo cubre el caso excepcional que causaba el
-        // bug reportado.
+        // bug reportado. Independiente de "_lastTeleportTime" de arriba: ese
+        // throttle cierra la ventana de reentrada alrededor de la EJECUCION
+        // real (se fija recien cuando ExecuteTeleport corre, sea al toque o
+        // diferido), mientras que el cooldown de PortalManager (ver
+        // SetCooldown en TryTeleport) ya cubre el reintento desde el
+        // ACTIVACION del portal — ambos mecanismos conviven sin pisarse.
         private sealed class PendingTeleport
         {
             public EntityPlayer Player;
@@ -178,6 +201,16 @@ namespace PortalMod
         {
             var steamId = PortalIdentity.GetSteamId(player);
             if (string.IsNullOrEmpty(steamId))
+            {
+                return;
+            }
+
+            // FIX real (Bug: doble teletransporte, ver comentario en
+            // _lastTeleportTime arriba): chequeo mas temprano y mas estricto
+            // que todo lo demas en este metodo, para cerrar cualquier
+            // ventana de reentrada.
+            if (_lastTeleportTime.TryGetValue(steamId, out var lastTeleport) &&
+                Time.time - lastTeleport < PostTeleportThrottleSeconds)
             {
                 return;
             }
@@ -412,6 +445,12 @@ namespace PortalMod
 
         private static void ExecuteTeleport(EntityPlayer player, string steamId, Vector3i originBlockPos, Vector3i destinationBlockPos)
         {
+            // FIX real (Bug: doble teletransporte, ver comentario en
+            // _lastTeleportTime): se fija ANTES de hacer cualquier otra cosa
+            // (particulas, SetPosition, buffs) para cerrar la ventana de
+            // reentrada lo mas posible — no al final del metodo.
+            _lastTeleportTime[steamId] = Time.time;
+
             // Flash + rafaga de particulas en el portal de ORIGEN, antes de mover
             // al jugador: una vez teletransportado ya no queda nadie ahi para
             // disparar el efecto via buff, asi que se hace explicitamente aqui.
@@ -425,23 +464,59 @@ namespace PortalMod
             var landingPos = FindLandingBlockPos(destinationBlockPos);
             var destination = new Vector3(landingPos.x + 0.5f, landingPos.y + 0.1f, landingPos.z + 0.5f);
 
-            // FIX real (usar la MISMA API que usa el juego para su propio
-            // teletransporte, en vez de SetPosition a mano): confirmado por
-            // decompilacion que EntityPlayer.Teleport(Vector3 _pos, float
-            // _dir = float.MinValue) es el metodo real y generico (existe en
-            // la clase base EntityPlayer, no solo en EntityPlayerLocal —
-            // funciona tanto en cliente como en servidor dedicado) que usa
-            // el propio juego para todo teletransporte real (respawn, cama,
-            // etc. pasan por aca via EntityPlayerLocal.TeleportToPosition).
-            // Su cuerpo real es "SetPosition(_pos); ...;
-            // Respawn(RespawnType.Teleport)" — hace lo mismo que
-            // SetPosition pero ademas dispara Respawn(RespawnType.Teleport),
-            // la misma señal que usa el juego para asentar al jugador
-            // despues de moverlo (limpieza de estado asociada, igual que en
-            // cualquier teletransporte vanilla). _dir se deja en su default
-            // (no cambiar la rotacion de camara del jugador al llegar, igual
-            // que el SetPosition anterior).
-            player.Teleport(destination);
+            // FIX real (el jugador seguia apareciendo ENCIMA del techo pese
+            // al fix anterior con World.CanPlayersSpawnAtPos): usar
+            // player.Teleport(...) (commit "instant portal teleport") fue lo
+            // que en realidad REINTRODUJO el bug. Teleport() hace
+            // "SetPosition(_pos); ...; Respawn(RespawnType.Teleport)" — y
+            // decompilando PlayerMoveController.Respawn(RespawnType) se
+            // confirmo que ESE metodo NO reposiciona nada de inmediato, solo
+            // fija "respawnReason"/un timer y pone Spawned=false: dispara una
+            // maquina de estados que el propio PlayerMoveController sigue
+            // procesando en frames POSTERIORES via updateRespawn() — el mismo
+            // metodo que, si la posicion no pasa World.CanPlayersSpawnAtPos
+            // (ni esa posicion +1), la descarta y reubica al jugador en
+            // World.GetHeight(x,z)+1 (ver FIX real de FindLandingBlockPos).
+            // O sea: aunque FindLandingBlockPos elija un Y perfectamente
+            // valido, Teleport() igual dispara ese rescate unos frames
+            // despues, que puede terminar sobreescribiendo la posicion que
+            // recien pusimos.
+            //
+            // NOTA: se investigo el comando de consola "teleport" (para ver
+            // si evita este rescate) — decompilando ConsoleCmdTeleportsAbs.
+            // ExecuteTeleport -> NetPackageTeleportPlayer.ProcessPackage se
+            // confirmo que TAMBIEN llama primaryPlayer.TeleportToPosition(...)
+            // (la misma cadena Teleport()/Respawn(RespawnType.Teleport) de
+            // arriba) — no es una ruta alternativa que evite el rescate, solo
+            // no lo nota en la practica porque normalmente se usa en zonas
+            // abiertas. Entity.SetPosition(Vector3, bool) (decompilado: solo
+            // actualiza "position"/"boundingBox"/transform de fisica, sin
+            // tocar Respawn/CanPlayersSpawnAtPos/rescate de terreno en
+            // absoluto) es la API real mas simple que logra evitar
+            // completamente esa maquina de estados. Se vuelve a este metodo
+            // (el que este archivo usaba antes del commit "instant portal
+            // teleport") en vez de Teleport().
+            //
+            // FIX real (Bug: no se podia teletransportar estando en un
+            // vehiculo — esto funcionaba durante la breve ventana en la que
+            // este archivo uso player.Teleport(...), y se rompio al volver a
+            // SetPosition directo): el cuerpo real decompilado de
+            // EntityPlayer.Teleport es "if (AttachedToEntity)
+            // AttachedToEntity.SetPosition(_pos); else SetPosition(_pos);" —
+            // si el jugador esta AttachedToEntity (sentado/manejando un
+            // vehiculo), mover al JUGADOR no sirve de nada porque su
+            // posicion visual la controla el vehiculo; hay que mover el
+            // vehiculo. Se replica exactamente esa parte (sin el resto del
+            // cuerpo de Teleport(), que dispara Respawn() y reintroduce el
+            // bug del techo de arriba).
+            if (player.AttachedToEntity != null)
+            {
+                player.AttachedToEntity.SetPosition(destination, true);
+            }
+            else
+            {
+                player.SetPosition(destination, true);
+            }
 
             // Rafaga de particulas en el DESTINO, ademas de la que dispara
             // buffPortalTravel (onSelfBuffStart en buffs.xml) al aplicarse el
@@ -462,21 +537,54 @@ namespace PortalMod
         }
 
         // FIX real (el jugador aparecia ENCIMA de un techo/estructura
-        // construida sobre el portal destino, en vez de dentro de el): la
-        // posicion de aterrizaje se calculaba siempre en destinationBlockPos.y
-        // sin verificar nada, confiando en que esa celda (el propio marco del
-        // portal, MultiBlockDim="1,2,1") estuviera libre. Si algo raro deja esa
-        // celda bloqueada, la correccion debe buscar espacio DESCENDIENDO
-        // desde el portal — nunca ascendiendo, que es lo que terminaba
-        // dejando al jugador arriba de cualquier techo/piso construido
-        // encima. "Pasable" usa la MISMA condicion real que usa el propio
-        // juego para decidir si una celda puede alojar algo (confirmado
-        // decompilando Block.MultiBlockArray.AddChilds: "blockValue.isair ||
-        // !blockValue.Block.shape.IsTerrain()") — el propio portalBlock
-        // (Shape="ModelEntity", no "Terrain") ya cuenta como pasable con
-        // esto, asi que en el caso normal (nada construido encima ni dentro)
-        // esto devuelve destinationBlockPos sin cambios, exactamente el
-        // comportamiento de antes de este fix.
+        // construida sobre el portal destino, en vez de dentro de el):
+        // el intento anterior de este fix usaba "blockValue.isair ||
+        // !blockValue.Block.shape.IsTerrain()" como chequeo de "celda
+        // libre" — ese es el criterio que usa Block.MultiBlockArray.
+        // AddChilds para decidir si un multiblock puede alojar un hijo ahi,
+        // pero NO significa "un jugador puede pararse aca": decompilando
+        // BlockShapeCube.IsTerrain() se confirmo que NO sobreescribe el
+        // metodo (hereda el default "false" de BlockShape) — es decir,
+        // CUALQUIER pared/piso/techo normal construido por un jugador
+        // (Shape="Cube") tambien "pasa" ese chequeo, asi que el intento
+        // anterior nunca detectaba un techo real y el escaneo jamas
+        // se activaba (siempre devolvia destinationBlockPos sin cambios).
+        //
+        // La causa real de por que terminaba arriba del techo ademas se
+        // confirmo decompilando PlayerMoveController.updateRespawn (parte
+        // del propio Respawn(RespawnType.Teleport) que dispara
+        // EntityPlayer.Teleport): si la posicion que le pasamos NO pasa
+        // World.CanPlayersSpawnAtPos (ni esa posicion +1 en Y), el JUEGO
+        // MISMO descarta silenciosamente nuestra posicion y reubica al
+        // jugador en "World.GetHeight(x,z) + 1" — la altura de la superficie
+        // solida mas alta en esa columna XZ, que en un cuarto cerrado ES el
+        // techo. Por eso hace falta usar la MISMA API real que usa esa
+        // rescate interno (World.CanPlayersSpawnAtPos — publica, usada
+        // tambien por EntityPlayerLocal.TryAddRecoveryPosition para puntos
+        // de recuperacion) para elegir un Y que el juego vaya a aceptar tal
+        // cual, en vez de adivinar una condicion de "pasable" propia.
+        //
+        // FIX real (Bug: "1 bloque adelante" del intento anterior podia
+        // terminar DENTRO de una pared — "adelante" depende de la rotacion
+        // del portal y del layout real del cuarto, ninguno de los dos
+        // garantiza que esa celda especifica este libre): se vuelve a la
+        // posicion XZ EXACTA del portal — el jugador debe aparecer siempre
+        // dentro del propio marco del portal (el "footprint"), nunca
+        // desplazado a un costado. Solo se ajusta la celda Y:
+        //   1) Primero se prueba EN o apenas ARRIBA de la Y del portal (0,
+        //      +1, +2) — cubre el caso normal (portal libre) y el caso de
+        //      un piso/objeto que invadio la celda inferior del marco.
+        //   2) Si nada de eso pasa CanPlayersSpawnAtPos (techo demasiado
+        //      bajo justo arriba del portal), se escanea DESCENDENTE desde
+        //      la Y del portal para encontrar el piso real.
+        // En ambos pasos se usa CanPlayersSpawnAtPos — la MISMA API real que
+        // usa el rescate interno del juego (PlayerMoveController.
+        // updateRespawn, ver comentario mas arriba) — para garantizar que la
+        // celda elegida ya sea valida ANTES de escribir la posicion: aunque
+        // este archivo ya no llama a Teleport()/Respawn() (ver comentario
+        // arriba de ExecuteTeleport, se revirtio a SetPosition especificamente
+        // para evitar ese rescate), sigue siendo la forma correcta de
+        // confirmar "el jugador realmente puede pararse aca" sin adivinar.
         private static Vector3i FindLandingBlockPos(Vector3i portalPos)
         {
             var world = GameManager.Instance != null ? GameManager.Instance.World : null;
@@ -491,49 +599,53 @@ namespace PortalMod
             // exactamente el mismo valor que "aca de verdad no hay nada"
             // (mismo caveat ya confirmado y documentado para esta API en
             // PortalManager.CheckPortalBlockAt y PortalPower.HasNearbyPower).
-            // Sin este chequeo, IsPassable de abajo leeria CUALQUIER celda de
-            // un chunk sin cargar como "libre" y el scan aceptaria con
-            // total confianza una posicion cuyo terreno real (una vez el
-            // chunk termine de cargar) puede resultar solido — dejando al
-            // jugador incrustado en el instante en que el chunk hace pop-in.
-            // Si el chunk del portal destino no esta cargado, no se escanea
-            // en absoluto: se devuelve la posicion original del portal sin
-            // modificar, exactamente el comportamiento previo a que
-            // existiera este scan (mas seguro que aterrizar sobre una
-            // lectura no confiable). PortalTeleport.TryTeleport ya intenta
-            // evitar llegar a este caso esperando (con limite configurable,
-            // ver PortalConfig.MaxChunkWaitSeconds) a que el chunk destino
-            // este cargado antes de ejecutar el teletransporte — este chequeo
-            // es la red de seguridad final para cuando ese limite se agota
-            // igual sin que el chunk haya cargado.
+            // World.CanPlayersSpawnAtPos (usado por el scan de abajo)
+            // termina leyendo ese mismo bloque real — sin este chequeo, el
+            // scan podria confiar con total seguridad en una posicion cuyo
+            // terreno real (una vez el chunk termine de cargar) resulte
+            // solido, dejando al jugador incrustado en el instante en que el
+            // chunk hace pop-in. Si el chunk del portal destino no esta
+            // cargado, no se escanea en absoluto: se devuelve la posicion
+            // original del portal sin modificar (mas seguro que aterrizar
+            // sobre una lectura no confiable). PortalTeleport.TryTeleport ya
+            // intenta evitar llegar a este caso esperando (con limite
+            // configurable, ver PortalConfig.MaxChunkWaitSeconds) a que el
+            // chunk destino este cargado antes de ejecutar el teletransporte
+            // — este chequeo es la red de seguridad final para cuando ese
+            // limite se agota igual sin que el chunk haya cargado.
             if (!world.IsChunkAreaLoaded(portalPos.x, portalPos.y, portalPos.z))
             {
                 API.LogWarning($"[PortalMod] FindLandingBlockPos: chunk destino en {portalPos} todavia no cargado; se usa la posicion del portal sin escanear (evita aterrizar sobre una lectura de terreno no confiable).");
                 return portalPos;
             }
 
-            const int maxScanDown = 32;
-            for (var dy = 0; dy >= -maxScanDown; dy--)
+            const int maxScanUp = 2;
+            for (var dy = 0; dy <= maxScanUp; dy++)
             {
-                var feetPos = portalPos + new Vector3i(0, dy, 0);
-                var headPos = feetPos + new Vector3i(0, 1, 0);
-                if (IsPassable(world, feetPos) && IsPassable(world, headPos))
+                var candidate = portalPos + new Vector3i(0, dy, 0);
+                // _bAllowToSpawnOnAirPos: true, igual que usa el propio
+                // PlayerMoveController.updateRespawn/TryAddRecoveryPosition
+                // al buscar una posicion de rescate.
+                if (world.CanPlayersSpawnAtPos(candidate.ToVector3(), true))
                 {
-                    return feetPos;
+                    return candidate;
                 }
             }
 
-            // No se encontro espacio libre en el rango escaneado: quedarse
-            // con la posicion original del portal (mismo comportamiento que
-            // antes de este fix) en vez de arriesgarse a subir por encima de
-            // una estructura.
-            return portalPos;
-        }
+            const int maxScanDown = 32;
+            for (var dy = -1; dy >= -maxScanDown; dy--)
+            {
+                var candidate = portalPos + new Vector3i(0, dy, 0);
+                if (world.CanPlayersSpawnAtPos(candidate.ToVector3(), true))
+                {
+                    return candidate;
+                }
+            }
 
-        private static bool IsPassable(World world, Vector3i pos)
-        {
-            var blockValue = world.GetBlock(pos);
-            return blockValue.isair || !blockValue.Block.shape.IsTerrain();
+            // No se encontro espacio valido en el rango escaneado: quedarse
+            // con la posicion original del portal en vez de arriesgarse a
+            // subir/bajar demasiado.
+            return portalPos;
         }
 
         private static void ApplyTravelBuff(EntityPlayer player)
