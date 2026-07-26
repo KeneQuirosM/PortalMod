@@ -104,6 +104,34 @@ cp Harmony/PortalMod.csproj.template Harmony/PortalMod.csproj
    `UnityEngine.CoreModule.dll` y `0Harmony.dll` existen dentro de la carpeta
    `Managed` detectada.
 
+## Publicación de releases (Nexus Mods)
+
+`.github/workflows/nexus-release.yml` se dispara automáticamente al
+**publicar un Release de GitHub** (no en drafts/pre-releases): descarga el
+`.zip`/`.rar` adjunto al release, intenta subirlo a la página del mod en
+Nexus Mods (`7daystodie`, mod
+[11298](https://www.nexusmods.com/7daystodie/mods/11298)) usando la [Upload
+API oficial de Nexus Mods](https://www.nexusmods.com/news/15454) (en open
+beta), y manda un aviso a Discord con el link del release — sea que la
+subida a Nexus haya funcionado, fallado, o todavía no esté configurada.
+
+**Por qué hay un aviso de Discord además de la subida automática**: la
+Upload API de Nexus Mods es de acceso restringido (beta orientada a
+"Verified Mod Authors") y **no puede crear una página de mod ni un primer
+archivo desde cero** — solo agrega una versión nueva a un archivo que ya
+subiste una vez a mano desde la web. El detalle completo de esta
+limitación, y de qué hacer si la subida automática todavía no está
+disponible, está documentado en los comentarios de cabecera del propio
+workflow.
+
+**Configuración necesaria** (Settings → Secrets and variables → Actions):
+
+| Tipo     | Nombre                | Notas                                                                                                    |
+|----------|------------------------|-----------------------------------------------------------------------------------------------------------|
+| Secret   | `NEXUS_API_KEY`        | API key personal de tu cuenta de Nexus Mods.                                                              |
+| Variable | `NEXUS_FILE_ID`        | ID del "file group" ya creado a mano en la pestaña Files del mod (ver comentarios del workflow) — **sin esto, el workflow salta la subida a Nexus y solo avisa por Discord**. |
+| Secret   | `DISCORD_WEBHOOK_URL`  | Opcional. Sin esto, el workflow no manda ningún aviso externo (solo queda el resumen en la pestaña Actions). |
+
 ## Cómo usar el mod (in-game)
 
 1. Craftea uno de los **6 estilos de portal** en una **mesa de trabajo**
@@ -135,8 +163,10 @@ cp Harmony/PortalMod.csproj.template Harmony/PortalMod.csproj
 7. Interactúa (tecla **E**) con un portal ya colocado para **renombrarlo**.
    Si le asignas un nuevo tag, el portal anterior (su antiguo par, si lo
    tenía) queda huérfano automáticamente.
-8. Tras cada viaje hay un **cooldown de 5 segundos** antes de poder volver a
-   activar un portal, para evitar loops infinitos de teletransporte.
+8. Tras cada viaje hay un **cooldown** (5 segundos por defecto) antes de
+   poder volver a activar un portal, para evitar loops infinitos de
+   teletransporte. Configurable por servidor entre 0 y 30s — ver
+   `Config/PortalModConfig.xml` (`TeleportCooldownSeconds`).
 9. Al salir de un portal se aplica brevemente el buff `buffPortalTravel`
    (2 segundos), que congela el movimiento y dispara un efecto de
    partículas/sonido de llegada.
@@ -157,6 +187,103 @@ cp Harmony/PortalMod.csproj.template Harmony/PortalMod.csproj
     tag) — cablear antes de vincular pierde el cable, porque vincular
     cambia el modelo del bloque al color del bioma, lo que reinicia su
     conexión eléctrica.
+12. Mientras tengas cualquier item de portal en la mano, listo para colocar,
+    verás un **ghost semitransparente** del marco (1x2x1) en la posición
+    donde va a quedar, con la misma rotación que tendría el portal real si
+    lo colocás en ese instante — ver *Feature: modo fantasma al colocar*
+    más abajo.
+13. Al colocar un portal, su rotación queda fija según hacia dónde estabas
+    mirando en ese momento (no siempre la misma orientación), y el modelo
+    muestra una pequeña flecha/chevron indicando por dónde vas a **salir**
+    al usarlo — ver *Feature: rotación real + indicador de salida* más
+    abajo.
+
+## Feature: modo fantasma al colocar (ghost de colocación)
+
+Mientras el jugador tiene equipado alguno de los 7 items que colocan un
+`portalBlock` (el original o cualquiera de los 6 estilos), aparece un
+**preview semitransparente** del marco del portal en la posición apuntada
+por la mira, con la misma rotación (ver siguiente sección) que tendría el
+portal real si se coloca en ese instante — igual idea que el preview nativo
+del juego para el resto de los bloques, para poder ver de antemano cómo va a
+quedar orientado antes de confirmar la colocación.
+
+**Cómo está implementado** (`PortalPlacementGhost.cs`): a diferencia del
+resto de los patches de este mod (que apuntan a métodos del motor ya
+confirmados por un error real de carga de Harmony — ver `PortalBlockPatch.cs`),
+**no se enganchó al sistema nativo de preview de colocación** del juego: no
+se pudo confirmar contra el `Assembly-CSharp.dll` real qué método corre ese
+preview cuadro a cuadro, y adivinar la firma de un Harmony patch nuevo
+arriesga que **todo el mod** falle al cargar si no coincide exactamente (ver
+el mismo riesgo, ya vivido varias veces en este mod, documentado en
+`PortalBlockPatch.cs`). En su lugar, el ghost es un objeto propio, construido
+enteramente con primitivas de Unity (`GameObject.CreatePrimitive`, sin
+depender de ningún AssetBundle/prefab del mod) que sigue el mismo raycast de
+mira ya confirmado y usado por `PortalHoverFX` (`EntityPlayerLocal.HitInfo`).
+
+**Limitaciones conocidas de esta implementación** (pendientes de validar en
+el juego real, ver `TESTING.md`):
+
+- Es una **caja traslucida** del tamaño del marco (1 ancho x 2 alto x 1
+  profundo), no un clon del modelo 3D real de cada estilo
+  (platform/grid/claws/cylinder/wings/arch) — instanciar el prefab real de
+  cada `.unity3d` como preview antes de la colocación requeriría confirmar
+  una API de resolución de prefab que no se pudo verificar sin el DLL real.
+- La celda exacta donde se muestra el ghost usa directamente
+  `EntityPlayerLocal.HitInfo.hit.blockPos` (la celda que la mira está
+  señalando) en vez de reproducir el desplazamiento exacto hacia la
+  cara/normal de colocación que usa el sistema nativo — puede diferir en 1
+  bloque de la posición real donde el juego terminaría colocando el portal.
+- La detección de "qué item tiene equipado el jugador" es *best-effort* por
+  reflection (mismo patrón defensivo que `PortalIdentity`/`PortalParty`: si
+  ningún candidato de nombre resuelve contra el `Assembly-CSharp.dll` real
+  de V3.0, el ghost simplemente no se muestra nunca — el mod sigue
+  funcionando exactamente igual que antes de esta Feature).
+
+## Feature: rotación real del portal + indicador de salida
+
+Antes de este cambio, `portalBlock` se colocaba siempre con la rotación por
+defecto del motor, sin importar hacia dónde miraba el jugador. Ahora:
+
+- **Rotación real al colocar**: `Block_OnBlockPlaceBefore_Patch` (ver
+  `PortalBlockPatch.cs`) calcula, a partir de hacia dónde miraba el jugador
+  en el instante de la colocación (`EntityAlive.rotation.y`, redondeado al
+  cardinal más cercano — ver `PortalOrientation.ComputeRotationFromPlayerFacing`),
+  y reescribe el campo `rotation` del `BlockValue` ya colocado
+  (`PortalOrientation.ApplyPlayerFacingRotation`), preservando el resto del
+  `BlockValue` sin tocarlo. Como el "type" (ID de bloque) no cambia, esto NO
+  dispara `Block.OnBlockRemoved` (el mismo gate ya documentado en
+  `PortalVisualFX.cs` para el swap de bioma/estilo), así que no corta ningún
+  cableado eléctrico.
+- **Indicador de salida (flecha)**: al activarse visualmente el modelo del
+  portal (mismo hook que ya usa el mod para reproducir las partículas
+  embebidas — ver `Block_OnBlockEntityTransformAfterActivated_Patch`), se
+  agrega un pequeño chevron (`>`), construido con primitivas de Unity, que
+  apunta hacia el lado "frente" del portal — ver `PortalExitIndicator.cs`.
+- **Salida al frente, no adentro del bloque**: `PortalTeleport.FindLandingBlockPos`
+  ahora intenta aterrizar al jugador en la celda **al frente** del portal
+  destino (lado opuesto al que se "entra", misma convención de rotación de
+  arriba) en vez de siempre adentro del propio marco — validando primero que
+  esa celda pase `World.CanPlayersSpawnAtPos` (nunca se asume "libre" a
+  ciegas) y cayendo al comportamiento anterior (adentro del marco) si no.
+  Esto es especialmente relevante para estilos no planos como
+  `portalBlock_cylinder`, donde aparecer adentro del propio marco podía
+  dejar al jugador chocando/incrustado contra el modelo al salir.
+
+**ADVERTENCIA DE CONFIANZA** (ver comentario completo en `PortalOrientation.cs`):
+no se pudo confirmar contra el `Assembly-CSharp.dll` real qué mapeo interno
+usa el motor entre `BlockValue.rotation` (0-3) y la orientación visual real
+que le aplica a un bloque `Shape="ModelEntity"` como `portalBlock`.
+`PortalOrientation.cs` define su **propia** convención (rotación 0=Norte,
+1=Este, 2=Sur, 3=Oeste, sentido horario), usada de forma **consistente** en
+todo el mod (colocación, indicador, aterrizaje) — esto garantiza que el
+portal siempre gira junto con el jugador que lo coloca, pase lo que pase.
+Lo único que puede quedar desalineado si esta convención no coincide con la
+real del motor es el sentido visual exacto (por ejemplo, que la flecha o el
+punto de aterrizaje terminen apuntando 90/180 grados distinto de lo que el
+modelo 3D muestra). Si al probar en el juego real esto no coincide, el
+ajuste es **únicamente** en `PortalOrientation.cs` (`ForwardOffset`/
+`ToQuaternion`) — ver `TESTING.md` para el procedimiento de calibración.
 
 ## Multijugador
 
@@ -296,6 +423,7 @@ PortalMod/
 │   ├── buffs.xml           buffPortalTravel
 │   ├── sounds.xml          SoundDataNode "guppyKeyUsed" (sonido de activacion)
 │   ├── Localization.csv    Strings en english / spanish (nombre real esperado por el juego)
+│   ├── PortalModConfig.xml Config ajustable por el servidor (cooldown, espera de chunk) — solo lo lee el mod, no el juego
 │   └── XUi_InGame/
 │       ├── windows.xml     Ventana popup "Nombrar portal" (windowPortalTag)
 │       └── xui.xml         window_group que registra windowPortalTag
@@ -305,10 +433,14 @@ PortalMod/
 │   └── src/
 │       ├── API.cs              Punto de entrada IModApi
 │       ├── PortalManager.cs    Registro/vinculacion/cooldown/persistencia/estilo/bioma
+│       ├── PortalConfig.cs     Config ajustable por servidor (cooldown, espera de chunk) leida de Config/PortalModConfig.xml
 │       ├── PortalTeleport.cs   Deteccion de colision y teletransporte
 │       ├── PortalBlockPatch.cs Harmony patches (colocar/activar/destruir)
 │       ├── PortalVisualFX.cs   Luz/particulas por estado + rafagas de teletransporte
 │       ├── PortalHoverFX.cs    Tooltip + texto flotante al apuntar a un portal (mira)
+│       ├── PortalOrientation.cs   Rotacion real: convencion compartida colocacion/salida/indicador
+│       ├── PortalExitIndicator.cs Flecha/chevron que marca por donde sale el jugador
+│       ├── PortalPlacementGhost.cs Ghost/preview semitransparente al tener un portal en mano
 │       ├── PortalBiomes.cs     Mapeo estilo+bioma -> variante de bloque
 │       ├── PortalPower.cs      Lee el TileEntity electrico real del portal (requiere cableado)
 │       ├── LogFilterPatch.cs   Filtra spam inofensivo del log (particulas rotas del modelo 6)
@@ -433,6 +565,50 @@ puntos más relevantes:
   origen), pero deja de garantizar estrictamente el máximo de 2 — se
   prefirió esto a rechazar la migración, lo que dejaría un bloque físico ya
   colocado en el mundo sin ningún registro.
+- **Identificador de jugador ("steamId") puede seguir sin ser estable entre
+  sesiones — reportado en servidor dedicado real**: hasta la fecha,
+  `PortalIdentity.GetSteamId` usaba `EntityPlayer.entityId.ToString()` como
+  único identificador (`entityId` NO es estable entre reconexiones — el
+  mismo jugador puede recibir uno distinto la próxima vez que se conecta).
+  Un usuario reportó exactamente el síntoma esperado de esto: **pierde la
+  propiedad de sus portales cada vez que se desconecta**, y tiene que
+  destruirlos y volver a colocarlos para recuperarlos. Se agregó una
+  resolución por reflection de un identificador de plataforma real
+  (Steam64/EOS/etc., varios nombres candidatos — ver `PortalUtils.cs`) que
+  se intenta ANTES de caer a `entityId`, con el mismo patrón defensivo que
+  `PortalParty.cs`. **No se pudo confirmar contra el `Assembly-CSharp.dll`
+  real si alguno de los candidatos existe** — si ninguno resuelve, el mod
+  sigue funcionando exactamente como antes (mismo bug). Revisar el log del
+  servidor: si el `ownerKey` logueado en `RegisterPortal` empieza con
+  `plat:` el fix está activo; si sigue siendo un número corto, ningún
+  candidato resolvió y hace falta decompilar el DLL real para encontrar el
+  nombre correcto.
+- **Cruce de identidad a mitad de sesión rompía el uso compartido de
+  portales en party — reportado**: consecuencia directa del punto anterior.
+  `PortalIdentity.GetSteamId` puede devolver el `entityId` (fallback)
+  durante los primeros llamados de la sesión y "cruzar" a `plat:...` en
+  cuanto el identificador de plataforma resuelve. Si un jugador colocaba un
+  portal ANTES de ese cruce y se unía a una party DESPUÉS, la migración
+  automática buscaba el portal bajo la key nueva (`plat:...`) pero seguía
+  registrado bajo la vieja (`entityId`) — no encontraba nada que migrar, y
+  el portal nunca pasaba a ser compartido: sus compañeros de party lo veían
+  como el portal de un desconocido. **Corregido**: `PortalManager.
+  ReassignSteamId`, invocado desde `PortalIdentity.GetSteamId` en el
+  momento exacto del cruce, reescribe toda referencia al `entityId` viejo
+  (portales registrados bajo esa key, atribución de dueño original,
+  cooldown, cache de detección de cambios de party) por el identificador
+  nuevo.
+- **Renombrar un portal ya vinculado desconecta el cable de su PAREJA**: es
+  consecuencia directa de la limitación de arriba ("swap de bloque = cable
+  cortado") combinada con cómo funciona `RenamePortal` — internamente hace
+  un desregistro + registro del portal que estás renombrando, lo que
+  primero rompe el par (el portal que NO estás tocando queda huérfano y su
+  bloque cambia a la variante inactiva, cortando su cable) y luego, si el
+  nuevo tag encuentra pareja, vuelve a cambiar de bloque. Si el segundo
+  portal del par pertenece a otro miembro de tu party, esto puede
+  desconectar un cable que él tendió sin que vos lo notes ni él sepa por
+  qué. Mitigación práctica mientras tanto: volver a cablear ambos portales
+  después de renombrar uno que ya estaba vinculado.
 - **Atribución de "dueño original" no se persiste a disco**: el índice de
   qué jugador colocó físicamente cada portal (usado para devolver solo tus
   propios portales al salir de una party) vive únicamente en memoria. Si el
@@ -440,6 +616,36 @@ puntos más relevantes:
   party, esa atribución se pierde para ese portal en particular — al salir
   de la party después de un reinicio, ese portal específico no se migrará
   de vuelta a nadie automáticamente (se queda con la party).
+- **Ghost de colocación (Feature "modo fantasma")**: no es un hook sobre el
+  sistema nativo de preview del juego (no confirmado contra el
+  `Assembly-CSharp.dll` real, ver sección dedicada más arriba) — es una caja
+  traslucida propia, no un clon del modelo 3D real de cada estilo, y la
+  detección de "qué item tiene equipado el jugador" es *best-effort* por
+  reflection (mismo patrón que `PortalIdentity`/`PortalParty`): si ningún
+  candidato resuelve, el ghost simplemente no aparece nunca, sin romper nada
+  más del mod.
+- **Convención de rotación propia (Feature "rotación real")**: no se pudo
+  confirmar el mapeo real del motor entre `BlockValue.rotation` y la
+  orientación visual de un `Shape="ModelEntity"` — `PortalOrientation.cs`
+  define su propia convención, consistente en todo el mod, pero el sentido
+  visual exacto (si la flecha/el punto de aterrizaje coinciden con el frente
+  real del modelo 3D) queda pendiente de calibrar contra el juego real — ver
+  sección dedicada más arriba y `TESTING.md`.
+- **Jugador atascado en una pared / devuelto al origen al llegar — reportado
+  en servidor dedicado real**: `World.GetBlock()` en una celda de un chunk
+  que todavía no terminó de cargar devuelve `BlockValue.Air`, indistinguible
+  de "acá de verdad no hay nada". El cálculo del punto de aterrizaje
+  (`PortalTeleport.FindLandingBlockPos`) confiaba en esa lectura sin
+  verificar si el chunk estaba realmente cargado, así que en servidores con
+  streaming de chunks lento podía "aterrizar" al jugador sobre terreno que
+  en ese momento se leía como aire pero resultaba sólido apenas el chunk
+  terminaba de cargar. **Corregido**: si el chunk destino no está cargado,
+  ya no se escanea en absoluto (se usa la posición del portal sin
+  modificar) — y `PortalTeleport.TryTeleport` ahora espera (con un límite
+  configurable, ver `Config/PortalModConfig.xml` → `MaxChunkWaitSeconds`,
+  default 2s, 0 desactiva la espera) a que el chunk destino esté cargado
+  antes de mover al jugador, sin ningún mensaje de "espera" visible — en el
+  caso normal (chunk ya cargado) el viaje sigue siendo instantáneo.
 
 Ya resueltos (confirmados contra el XML original del mod de assets SCore,
 pendientes solo de probarse en el juego real — ver `TESTING.md`):

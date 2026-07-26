@@ -53,6 +53,73 @@ sección 9.3.
 - [ ] El portal queda registrado como huérfano correctamente (un solo
       portal con ese tag).
 
+## 4.1 Pruebas de modo fantasma al colocar (Feature 1)
+
+Ver `PortalPlacementGhost.cs` y sección "Feature: modo fantasma al colocar"
+en README.md. Ninguno de estos puntos se pudo probar en el entorno de
+desarrollo del mod (sin acceso al juego) — es la Feature con más riesgo/
+incertidumbre de todo este cambio, ver limitaciones documentadas en README.
+
+- [ ] Al equipar cualquiera de los 7 items de portal (el original o
+      cualquiera de los 6 estilos), aparece una caja semitransparente
+      siguiendo la mira.
+- [ ] La caja **rota** al girar el personaje (probar mirando hacia los 4
+      puntos cardinales aproximados — Norte/Este/Sur/Oeste) — si no rota,
+      revisar el log por `[PortalMod] Rotacion aplicada en ...` al colocar
+      de verdad (confirma si `PortalOrientation.ComputeRotationFromPlayerFacing`
+      corre) y si el problema es solo del ghost (Feature 1) o también de la
+      colocación real (Feature 2, ver sección 4.2).
+- [ ] Al soltar la mira o guardar el item, la caja desaparece.
+- [ ] **Si la caja nunca aparece**: revisar el log por
+      `PortalPlacementGhost: fallo resolviendo el item equipado por
+      reflection` — significa que ningún candidato de nombre
+      (`holdingItemItemValue`/`holdingItem`/etc., ver
+      `PortalPlacementGhost.cs`) resolvió contra el `Assembly-CSharp.dll`
+      real de V3.0. El mod sigue funcionando normalmente (el resto de las
+      features no depende de esto) — anotar el error exacto del log para
+      poder agregar el nombre real como candidato nuevo.
+- [ ] La posición de la caja puede estar desplazada ~1 bloque respecto a
+      donde el portal termina colocándose realmente (limitación conocida,
+      ver README) — confirmar la magnitud/dirección real del desfasaje si
+      lo hay, para poder ajustar el offset en `PortalPlacementGhost.Tick`.
+
+## 4.2 Pruebas de rotación real + indicador de salida (Feature 2)
+
+Ver `PortalOrientation.cs`, `PortalExitIndicator.cs` y
+`PortalTeleport.FindLandingBlockPos`. **Advertencia de confianza**: la
+convención de rotación usada acá es propia del mod (no confirmada contra el
+mapeo real del motor, ver README) — estos pasos sirven también para
+calibrarla si algo no coincide visualmente.
+
+- [ ] Colocar un portal mirando hacia el Norte, y otro (en otra ubicación)
+      mirando hacia el Este: los dos modelos deben verse rotados 90 grados
+      entre sí (no la misma orientación fija de antes de este cambio).
+      Revisar el log por `[PortalMod] Rotacion aplicada en ... rotation=...`.
+- [ ] El modelo del portal muestra una pequeña flecha/chevron (`>`) violeta
+      apuntando hacia un lado — ese lado debe coincidir con el lado "frente"
+      calculado (mismo usado para el aterrizaje, ver siguiente punto). Si el
+      indicador no aparece, revisar el log por
+      `PortalExitIndicator: fallo agregando el indicador de salida`.
+- [ ] Vincular un par y entrar por el portal A: al llegar a B, el jugador
+      debe aparecer **al frente** de B (no incrustado adentro del propio
+      marco) — comparar contra el lado señalado por la flecha del punto
+      anterior.
+- [ ] Repetir la prueba anterior específicamente con un par de estilo
+      `portalBlock_cylinder` (`Blockname="portalBlock_cylinder"`, ver
+      `Config/blocks.xml`) — este es el caso que más le costaba al
+      comportamiento anterior (jugador chocando/incrustado contra el
+      modelo del cilindro al salir); confirmar que ya no ocurre.
+- [ ] Si la celda "al frente" del destino está bloqueada (pared, objeto),
+      el aterrizaje debe caer de vuelta al comportamiento anterior (adentro
+      del marco) en vez de fallar — revisar que el jugador nunca quede sin
+      aterrizar.
+- [ ] **Calibración** (solo si el indicador/aterrizaje NO coincide con el
+      frente visual real del modelo 3D): editar únicamente
+      `PortalOrientation.ForwardOffset`/`ToQuaternion` (reordenar u
+      invertir el mapeo Norte/Este/Sur/Oeste) — no hace falta tocar
+      `PortalTeleport.cs`/`PortalExitIndicator.cs`, ambos leen la
+      convención desde ahí.
+
 ## 5. Pruebas de vinculación
 
 - [ ] Colocar dos portales con el mismo tag los vincula.
@@ -73,8 +140,24 @@ sección 9.3.
 - [ ] El sonido `gupKeyCardSound` suena al activarse.
 - [ ] El efecto `gupFuturePortal4` se ve en el destino.
 - [ ] El efecto `gupTeleportRide` se ve durante el viaje (loop de los 2s).
-- [ ] El cooldown de 5s impide teletransportar inmediatamente después de
+- [ ] El cooldown (5s por defecto, configurable — ver `Config/
+      PortalModConfig.xml`) impide teletransportar inmediatamente después de
       un viaje (verificar que no ocurran loops).
+- [ ] Cambiar `TeleportCooldownSeconds` en `Config/PortalModConfig.xml` (por
+      ejemplo a 15) y reiniciar el servidor: el cooldown real observado en
+      juego debe coincidir con el nuevo valor. Un valor fuera de rango
+      (negativo, o mayor a 30) debe caer al default (5s) — revisar el log
+      por el warning correspondiente.
+- [ ] Portal destino en un chunk lejano/recién generado (jugador viaja a un
+      punto donde nunca estuvo antes en esta sesión, o el servidor recién
+      arrancó): el jugador NO debe aparecer atascado dentro de terreno ni
+      ser devuelto al origen. Revisar el log por
+      `Teletransporte diferido...` (espera al chunk) o
+      `FindLandingBlockPos: chunk destino ... todavia no cargado` (se agotó
+      la espera configurada en `MaxChunkWaitSeconds`).
+- [ ] Con `MaxChunkWaitSeconds` en 0 en la config: el comportamiento debe
+      volver a ser el instantáneo original (sin espera), incluso hacia un
+      chunk sin cargar.
 
 ## 6.1 Pruebas de requisito de energía (Feature "requiere electricidad")
 
@@ -351,6 +434,18 @@ juego real. Anotar el resultado real de cada uno al probar:
       **probar en el juego real** que presionar E sobre un portal (con o
       sin tag) sigue abriendo la ventana correcta y no un menú de comandos
       tipo "Take".
+- [ ] Confirmar el mapeo real del motor entre `BlockValue.rotation` y la
+      orientación visual de un bloque `Shape="ModelEntity"`
+      (`PortalOrientation.cs`, Feature 2) — ver secciones "Feature: rotación
+      real..." en README.md y 4.2 más arriba para el procedimiento de
+      calibración si no coincide.
+- [ ] Confirmar el nombre real del miembro de `Inventory` que expone el
+      `ItemValue`/`ItemClass` actualmente equipado por el jugador local
+      (`PortalPlacementGhost.cs`, Feature 1) — candidatos probados:
+      `holdingItemItemValue`, `holdingItem` (ver lista completa en el
+      archivo). Revisar el log por
+      `PortalPlacementGhost: fallo resolviendo el item equipado por
+      reflection` si ninguno resolvió.
 
 ### 10.1 Errores reales corregidos (compilación y carga del mod)
 
@@ -367,9 +462,24 @@ cada uno sigue sin probarse:
       encuentra, falla al cargar el mod con un error claro en el log).
 - [x] `EntityPlayer.PlatformUserIdentifierAbs` no existe — **corregido**
       usando `player.entityId.ToString()` como identificador de jugador
-      (`PortalUtils.cs`). Pendiente: esto NO es estable entre
-      reconexiones/sesiones; probar qué pasa con los portales de un
-      jugador después de que se desconecta y se vuelve a conectar.
+      (`PortalUtils.cs`). Confirmado en reporte real de servidor dedicado:
+      esto NO es estable entre reconexiones/sesiones — cada reconexión
+      rompe la asociación de portales del jugador (aparecen "sin dueño",
+      hay que destruir y volver a colocar el bloque para recuperarlos).
+      **Mitigado** (no confirmado 100%, ver `PortalIdentity.
+      TryResolveStablePlatformId`): antes de caer a `entityId`, se intenta
+      resolver por reflection un identificador de plataforma real
+      (candidatos: `PlatformUserIdentifierAbs`, `PlatformId`,
+      `CrossplatformId`, `UserIdentifier`, `SteamId`, `steamID`, buscados
+      en toda la jerarquía de `EntityPlayer`) — mismo patrón defensivo que
+      `PortalParty.TryGetPartyId`. Si ningún candidato existe en el
+      `Assembly-CSharp.dll` real de V3.0, el mod sigue compilando y cae al
+      comportamiento anterior (`entityId`, con el mismo bug). Pendiente:
+      probar en un servidor real si alguno de los candidatos resuelve
+      (revisar el log — si el ownerKey logueado en `RegisterPortal`
+      empieza con `plat:` en vez de ser un número corto, el fix está
+      activo) y, si no, decompilar `Assembly-CSharp.dll` para confirmar el
+      nombre real y agregarlo a la lista de candidatos.
 - [x] `windowManager.Open(...)` con 4 argumentos no existe — **corregido**
       invocando `Open` por reflection, probando el primer método `Open`
       cuyo primer parámetro sea `string` (`XUiPortalTag.cs`). Pendiente:
@@ -467,6 +577,16 @@ cada uno sigue sin probarse:
       usando el mismo tag.
 - [ ] El teletransporte funciona en servidor dedicado (no solo en
       single-player/host).
+- [ ] **Portales compartidos en party**: dos jugadores en la misma party;
+      uno coloca un portal INMEDIATAMENTE después de conectarse (antes de
+      unirse a la party, si es posible, para forzar el escenario de cruce
+      de identidad — ver `PortalManager.ReassignSteamId`); el otro miembro
+      debe poder usarlo apenas la migración a la party se complete (hasta
+      ~10s de retraso por el sondeo, ver sección 11.1 más abajo sobre
+      party). Revisar el log por
+      `PortalIdentity: id de plataforma estable resuelto ... reasignando
+      estado` y `ReassignSteamId: ... -> ... (cruce de identidad
+      resuelto...)` si el fallback llegó a usarse antes de resolver.
 
 ## 11.1 Pruebas de la auditoría de estabilidad (ver AUDIT.md)
 
@@ -481,9 +601,13 @@ Puntos concretos a probar en el juego real:
       portapapeles y pegarlo en el campo) y confirmar que no rompe
       `portals.dat` en el siguiente guardado.
 - [ ] Intentar viajar a un portal en un chunk lejano recién cargado el mundo
-      (chunk probablemente descargado) y confirmar que aparece el mensaje
-      "Área de destino aún no está cargada" en vez de teletransportar a
-      ciegas.
+      (chunk probablemente descargado): DESACTUALIZADO — el mod ya no
+      muestra ningún mensaje de "área aún no cargada" (se eliminó
+      deliberadamente para que el viaje se sienta instantáneo, ver commit
+      "instant portal teleport, no chunk-load wait"). Ver en cambio la
+      sección 6 ("Portal destino en un chunk lejano/recién generado") sobre
+      el comportamiento actual: espera silenciosa acotada
+      (`MaxChunkWaitSeconds`) en vez de bloquear con un mensaje.
 - [ ] Corromper manualmente una línea de `portals.dat` (editar a mano,
       truncar un número) con el juego cerrado, volver a abrir, y confirmar
       que solo esa línea se descarta (log con "Linea corrupta/invalida... se
