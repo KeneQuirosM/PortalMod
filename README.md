@@ -187,6 +187,103 @@ workflow.
     tag) — cablear antes de vincular pierde el cable, porque vincular
     cambia el modelo del bloque al color del bioma, lo que reinicia su
     conexión eléctrica.
+12. Mientras tengas cualquier item de portal en la mano, listo para colocar,
+    verás un **ghost semitransparente** del marco (1x2x1) en la posición
+    donde va a quedar, con la misma rotación que tendría el portal real si
+    lo colocás en ese instante — ver *Feature: modo fantasma al colocar*
+    más abajo.
+13. Al colocar un portal, su rotación queda fija según hacia dónde estabas
+    mirando en ese momento (no siempre la misma orientación), y el modelo
+    muestra una pequeña flecha/chevron indicando por dónde vas a **salir**
+    al usarlo — ver *Feature: rotación real + indicador de salida* más
+    abajo.
+
+## Feature: modo fantasma al colocar (ghost de colocación)
+
+Mientras el jugador tiene equipado alguno de los 7 items que colocan un
+`portalBlock` (el original o cualquiera de los 6 estilos), aparece un
+**preview semitransparente** del marco del portal en la posición apuntada
+por la mira, con la misma rotación (ver siguiente sección) que tendría el
+portal real si se coloca en ese instante — igual idea que el preview nativo
+del juego para el resto de los bloques, para poder ver de antemano cómo va a
+quedar orientado antes de confirmar la colocación.
+
+**Cómo está implementado** (`PortalPlacementGhost.cs`): a diferencia del
+resto de los patches de este mod (que apuntan a métodos del motor ya
+confirmados por un error real de carga de Harmony — ver `PortalBlockPatch.cs`),
+**no se enganchó al sistema nativo de preview de colocación** del juego: no
+se pudo confirmar contra el `Assembly-CSharp.dll` real qué método corre ese
+preview cuadro a cuadro, y adivinar la firma de un Harmony patch nuevo
+arriesga que **todo el mod** falle al cargar si no coincide exactamente (ver
+el mismo riesgo, ya vivido varias veces en este mod, documentado en
+`PortalBlockPatch.cs`). En su lugar, el ghost es un objeto propio, construido
+enteramente con primitivas de Unity (`GameObject.CreatePrimitive`, sin
+depender de ningún AssetBundle/prefab del mod) que sigue el mismo raycast de
+mira ya confirmado y usado por `PortalHoverFX` (`EntityPlayerLocal.HitInfo`).
+
+**Limitaciones conocidas de esta implementación** (pendientes de validar en
+el juego real, ver `TESTING.md`):
+
+- Es una **caja traslucida** del tamaño del marco (1 ancho x 2 alto x 1
+  profundo), no un clon del modelo 3D real de cada estilo
+  (platform/grid/claws/cylinder/wings/arch) — instanciar el prefab real de
+  cada `.unity3d` como preview antes de la colocación requeriría confirmar
+  una API de resolución de prefab que no se pudo verificar sin el DLL real.
+- La celda exacta donde se muestra el ghost usa directamente
+  `EntityPlayerLocal.HitInfo.hit.blockPos` (la celda que la mira está
+  señalando) en vez de reproducir el desplazamiento exacto hacia la
+  cara/normal de colocación que usa el sistema nativo — puede diferir en 1
+  bloque de la posición real donde el juego terminaría colocando el portal.
+- La detección de "qué item tiene equipado el jugador" es *best-effort* por
+  reflection (mismo patrón defensivo que `PortalIdentity`/`PortalParty`: si
+  ningún candidato de nombre resuelve contra el `Assembly-CSharp.dll` real
+  de V3.0, el ghost simplemente no se muestra nunca — el mod sigue
+  funcionando exactamente igual que antes de esta Feature).
+
+## Feature: rotación real del portal + indicador de salida
+
+Antes de este cambio, `portalBlock` se colocaba siempre con la rotación por
+defecto del motor, sin importar hacia dónde miraba el jugador. Ahora:
+
+- **Rotación real al colocar**: `Block_OnBlockPlaceBefore_Patch` (ver
+  `PortalBlockPatch.cs`) calcula, a partir de hacia dónde miraba el jugador
+  en el instante de la colocación (`EntityAlive.rotation.y`, redondeado al
+  cardinal más cercano — ver `PortalOrientation.ComputeRotationFromPlayerFacing`),
+  y reescribe el campo `rotation` del `BlockValue` ya colocado
+  (`PortalOrientation.ApplyPlayerFacingRotation`), preservando el resto del
+  `BlockValue` sin tocarlo. Como el "type" (ID de bloque) no cambia, esto NO
+  dispara `Block.OnBlockRemoved` (el mismo gate ya documentado en
+  `PortalVisualFX.cs` para el swap de bioma/estilo), así que no corta ningún
+  cableado eléctrico.
+- **Indicador de salida (flecha)**: al activarse visualmente el modelo del
+  portal (mismo hook que ya usa el mod para reproducir las partículas
+  embebidas — ver `Block_OnBlockEntityTransformAfterActivated_Patch`), se
+  agrega un pequeño chevron (`>`), construido con primitivas de Unity, que
+  apunta hacia el lado "frente" del portal — ver `PortalExitIndicator.cs`.
+- **Salida al frente, no adentro del bloque**: `PortalTeleport.FindLandingBlockPos`
+  ahora intenta aterrizar al jugador en la celda **al frente** del portal
+  destino (lado opuesto al que se "entra", misma convención de rotación de
+  arriba) en vez de siempre adentro del propio marco — validando primero que
+  esa celda pase `World.CanPlayersSpawnAtPos` (nunca se asume "libre" a
+  ciegas) y cayendo al comportamiento anterior (adentro del marco) si no.
+  Esto es especialmente relevante para estilos no planos como
+  `portalBlock_cylinder`, donde aparecer adentro del propio marco podía
+  dejar al jugador chocando/incrustado contra el modelo al salir.
+
+**ADVERTENCIA DE CONFIANZA** (ver comentario completo en `PortalOrientation.cs`):
+no se pudo confirmar contra el `Assembly-CSharp.dll` real qué mapeo interno
+usa el motor entre `BlockValue.rotation` (0-3) y la orientación visual real
+que le aplica a un bloque `Shape="ModelEntity"` como `portalBlock`.
+`PortalOrientation.cs` define su **propia** convención (rotación 0=Norte,
+1=Este, 2=Sur, 3=Oeste, sentido horario), usada de forma **consistente** en
+todo el mod (colocación, indicador, aterrizaje) — esto garantiza que el
+portal siempre gira junto con el jugador que lo coloca, pase lo que pase.
+Lo único que puede quedar desalineado si esta convención no coincide con la
+real del motor es el sentido visual exacto (por ejemplo, que la flecha o el
+punto de aterrizaje terminen apuntando 90/180 grados distinto de lo que el
+modelo 3D muestra). Si al probar en el juego real esto no coincide, el
+ajuste es **únicamente** en `PortalOrientation.cs` (`ForwardOffset`/
+`ToQuaternion`) — ver `TESTING.md` para el procedimiento de calibración.
 
 ## Multijugador
 
@@ -341,6 +438,9 @@ PortalMod/
 │       ├── PortalBlockPatch.cs Harmony patches (colocar/activar/destruir)
 │       ├── PortalVisualFX.cs   Luz/particulas por estado + rafagas de teletransporte
 │       ├── PortalHoverFX.cs    Tooltip + texto flotante al apuntar a un portal (mira)
+│       ├── PortalOrientation.cs   Rotacion real: convencion compartida colocacion/salida/indicador
+│       ├── PortalExitIndicator.cs Flecha/chevron que marca por donde sale el jugador
+│       ├── PortalPlacementGhost.cs Ghost/preview semitransparente al tener un portal en mano
 │       ├── PortalBiomes.cs     Mapeo estilo+bioma -> variante de bloque
 │       ├── PortalPower.cs      Lee el TileEntity electrico real del portal (requiere cableado)
 │       ├── LogFilterPatch.cs   Filtra spam inofensivo del log (particulas rotas del modelo 6)
@@ -516,6 +616,21 @@ puntos más relevantes:
   party, esa atribución se pierde para ese portal en particular — al salir
   de la party después de un reinicio, ese portal específico no se migrará
   de vuelta a nadie automáticamente (se queda con la party).
+- **Ghost de colocación (Feature "modo fantasma")**: no es un hook sobre el
+  sistema nativo de preview del juego (no confirmado contra el
+  `Assembly-CSharp.dll` real, ver sección dedicada más arriba) — es una caja
+  traslucida propia, no un clon del modelo 3D real de cada estilo, y la
+  detección de "qué item tiene equipado el jugador" es *best-effort* por
+  reflection (mismo patrón que `PortalIdentity`/`PortalParty`): si ningún
+  candidato resuelve, el ghost simplemente no aparece nunca, sin romper nada
+  más del mod.
+- **Convención de rotación propia (Feature "rotación real")**: no se pudo
+  confirmar el mapeo real del motor entre `BlockValue.rotation` y la
+  orientación visual de un `Shape="ModelEntity"` — `PortalOrientation.cs`
+  define su propia convención, consistente en todo el mod, pero el sentido
+  visual exacto (si la flecha/el punto de aterrizaje coinciden con el frente
+  real del modelo 3D) queda pendiente de calibrar contra el juego real — ver
+  sección dedicada más arriba y `TESTING.md`.
 - **Jugador atascado en una pared / devuelto al origen al llegar — reportado
   en servidor dedicado real**: `World.GetBlock()` en una celda de un chunk
   que todavía no terminó de cargar devuelve `BlockValue.Air`, indistinguible

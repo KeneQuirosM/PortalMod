@@ -53,6 +53,73 @@ sección 9.3.
 - [ ] El portal queda registrado como huérfano correctamente (un solo
       portal con ese tag).
 
+## 4.1 Pruebas de modo fantasma al colocar (Feature 1)
+
+Ver `PortalPlacementGhost.cs` y sección "Feature: modo fantasma al colocar"
+en README.md. Ninguno de estos puntos se pudo probar en el entorno de
+desarrollo del mod (sin acceso al juego) — es la Feature con más riesgo/
+incertidumbre de todo este cambio, ver limitaciones documentadas en README.
+
+- [ ] Al equipar cualquiera de los 7 items de portal (el original o
+      cualquiera de los 6 estilos), aparece una caja semitransparente
+      siguiendo la mira.
+- [ ] La caja **rota** al girar el personaje (probar mirando hacia los 4
+      puntos cardinales aproximados — Norte/Este/Sur/Oeste) — si no rota,
+      revisar el log por `[PortalMod] Rotacion aplicada en ...` al colocar
+      de verdad (confirma si `PortalOrientation.ComputeRotationFromPlayerFacing`
+      corre) y si el problema es solo del ghost (Feature 1) o también de la
+      colocación real (Feature 2, ver sección 4.2).
+- [ ] Al soltar la mira o guardar el item, la caja desaparece.
+- [ ] **Si la caja nunca aparece**: revisar el log por
+      `PortalPlacementGhost: fallo resolviendo el item equipado por
+      reflection` — significa que ningún candidato de nombre
+      (`holdingItemItemValue`/`holdingItem`/etc., ver
+      `PortalPlacementGhost.cs`) resolvió contra el `Assembly-CSharp.dll`
+      real de V3.0. El mod sigue funcionando normalmente (el resto de las
+      features no depende de esto) — anotar el error exacto del log para
+      poder agregar el nombre real como candidato nuevo.
+- [ ] La posición de la caja puede estar desplazada ~1 bloque respecto a
+      donde el portal termina colocándose realmente (limitación conocida,
+      ver README) — confirmar la magnitud/dirección real del desfasaje si
+      lo hay, para poder ajustar el offset en `PortalPlacementGhost.Tick`.
+
+## 4.2 Pruebas de rotación real + indicador de salida (Feature 2)
+
+Ver `PortalOrientation.cs`, `PortalExitIndicator.cs` y
+`PortalTeleport.FindLandingBlockPos`. **Advertencia de confianza**: la
+convención de rotación usada acá es propia del mod (no confirmada contra el
+mapeo real del motor, ver README) — estos pasos sirven también para
+calibrarla si algo no coincide visualmente.
+
+- [ ] Colocar un portal mirando hacia el Norte, y otro (en otra ubicación)
+      mirando hacia el Este: los dos modelos deben verse rotados 90 grados
+      entre sí (no la misma orientación fija de antes de este cambio).
+      Revisar el log por `[PortalMod] Rotacion aplicada en ... rotation=...`.
+- [ ] El modelo del portal muestra una pequeña flecha/chevron (`>`) violeta
+      apuntando hacia un lado — ese lado debe coincidir con el lado "frente"
+      calculado (mismo usado para el aterrizaje, ver siguiente punto). Si el
+      indicador no aparece, revisar el log por
+      `PortalExitIndicator: fallo agregando el indicador de salida`.
+- [ ] Vincular un par y entrar por el portal A: al llegar a B, el jugador
+      debe aparecer **al frente** de B (no incrustado adentro del propio
+      marco) — comparar contra el lado señalado por la flecha del punto
+      anterior.
+- [ ] Repetir la prueba anterior específicamente con un par de estilo
+      `portalBlock_cylinder` (`Blockname="portalBlock_cylinder"`, ver
+      `Config/blocks.xml`) — este es el caso que más le costaba al
+      comportamiento anterior (jugador chocando/incrustado contra el
+      modelo del cilindro al salir); confirmar que ya no ocurre.
+- [ ] Si la celda "al frente" del destino está bloqueada (pared, objeto),
+      el aterrizaje debe caer de vuelta al comportamiento anterior (adentro
+      del marco) en vez de fallar — revisar que el jugador nunca quede sin
+      aterrizar.
+- [ ] **Calibración** (solo si el indicador/aterrizaje NO coincide con el
+      frente visual real del modelo 3D): editar únicamente
+      `PortalOrientation.ForwardOffset`/`ToQuaternion` (reordenar u
+      invertir el mapeo Norte/Este/Sur/Oeste) — no hace falta tocar
+      `PortalTeleport.cs`/`PortalExitIndicator.cs`, ambos leen la
+      convención desde ahí.
+
 ## 5. Pruebas de vinculación
 
 - [ ] Colocar dos portales con el mismo tag los vincula.
@@ -367,6 +434,18 @@ juego real. Anotar el resultado real de cada uno al probar:
       **probar en el juego real** que presionar E sobre un portal (con o
       sin tag) sigue abriendo la ventana correcta y no un menú de comandos
       tipo "Take".
+- [ ] Confirmar el mapeo real del motor entre `BlockValue.rotation` y la
+      orientación visual de un bloque `Shape="ModelEntity"`
+      (`PortalOrientation.cs`, Feature 2) — ver secciones "Feature: rotación
+      real..." en README.md y 4.2 más arriba para el procedimiento de
+      calibración si no coincide.
+- [ ] Confirmar el nombre real del miembro de `Inventory` que expone el
+      `ItemValue`/`ItemClass` actualmente equipado por el jugador local
+      (`PortalPlacementGhost.cs`, Feature 1) — candidatos probados:
+      `holdingItemItemValue`, `holdingItem` (ver lista completa en el
+      archivo). Revisar el log por
+      `PortalPlacementGhost: fallo resolviendo el item equipado por
+      reflection` si ninguno resolvió.
 
 ### 10.1 Errores reales corregidos (compilación y carga del mod)
 

@@ -144,6 +144,21 @@ namespace PortalMod
                 API.LogError($"Excepcion en PortalHoverFX.Tick(): {e}");
             }
 
+            try
+            {
+                // Feature 1 ("modo fantasma al colocar el portal"): preview
+                // semitransparente mientras el jugador local tiene equipado
+                // un item de portal (ver PortalPlacementGhost). Aislado en
+                // su propio try/catch, igual que PortalHoverFX arriba: es
+                // puramente client-side/cosmetico, un fallo aca nunca debe
+                // afectar el resto del tick (colision/teletransporte).
+                PortalPlacementGhost.Tick(world);
+            }
+            catch (Exception e)
+            {
+                API.LogError($"Excepcion en PortalPlacementGhost.Tick(): {e}");
+            }
+
             // Autoguardado periodico (ver PortalManager.MaybeAutoSave): acota
             // la ventana de perdida de datos ante un crash duro del proceso,
             // ya que OnApplicationQuit nunca se ejecuta en ese caso. Save()
@@ -461,7 +476,19 @@ namespace PortalMod
             // (ver mas abajo) corrige la celda Y si hace falta (techo/estructura
             // construida sobre el portal, ver FIX real ahi) — en el caso normal
             // devuelve destinationBlockPos sin cambios.
-            var landingPos = FindLandingBlockPos(destinationBlockPos);
+            // Feature 2 ("indicador de salida" / rotacion real): la
+            // rotacion real ya escrita al colocar el portal (ver
+            // PortalOrientation.ApplyPlayerFacingRotation, llamada desde
+            // Block_OnBlockPlaceBefore_Patch) vive directamente en el
+            // BlockValue del bloque en el mundo — no hace falta persistirla
+            // aparte en PortalManager (mismo patron que ya usa
+            // PortalVisualFX para leer/escribir "rotation": la fuente de
+            // verdad es siempre el BlockValue real). Se lee aca para poder
+            // preferir la celda "al frente" del portal como aterrizaje (ver
+            // FindLandingBlockPos).
+            var worldForRotation = GameManager.Instance != null ? GameManager.Instance.World : null;
+            var destRotation = worldForRotation != null ? worldForRotation.GetBlock(destinationBlockPos).rotation : PortalOrientation.RotationNorth;
+            var landingPos = FindLandingBlockPos(destinationBlockPos, destRotation);
             var destination = new Vector3(landingPos.x + 0.5f, landingPos.y + 0.1f, landingPos.z + 0.5f);
 
             // FIX real (el jugador seguia apareciendo ENCIMA del techo pese
@@ -585,7 +612,24 @@ namespace PortalMod
         // arriba de ExecuteTeleport, se revirtio a SetPosition especificamente
         // para evitar ese rescate), sigue siendo la forma correcta de
         // confirmar "el jugador realmente puede pararse aca" sin adivinar.
-        private static Vector3i FindLandingBlockPos(Vector3i portalPos)
+        // FEATURE 2 ("el punto de salida debe estar al frente del portal, no
+        // adentro del bloque"): antes de este cambio el aterrizaje SIEMPRE
+        // usaba la columna XZ exacta del portal (ver todo el historial de
+        // bugs documentado arriba sobre por que — sin rotacion real,
+        // "adelante" no era confiable, ver PortalOrientation). Ahora que
+        // portalBlock respeta la rotacion del jugador al colocarse, se puede
+        // calcular con confianza la celda "al frente" (lado opuesto al que
+        // se entra) y probarla PRIMERO — relevante en particular para
+        // estilos no planos (ej. "cylinder", ver blocks.xml) donde aparecer
+        // adentro del propio marco puede dejar al jugador chocando/
+        // incrustado contra el modelo al salir. Se prueba la celda al
+        // frente SOLO si su chunk esta cargado y pasa
+        // World.CanPlayersSpawnAtPos (nunca se asume "libre" a ciegas, mismo
+        // criterio que el resto de este metodo) — si cualquiera de las dos
+        // falla, se cae al comportamiento ORIGINAL (adentro del marco, ver
+        // "TryFindSpawnableColumn" mas abajo), nunca se deja al jugador sin
+        // aterrizar.
+        private static Vector3i FindLandingBlockPos(Vector3i portalPos, byte rotation)
         {
             var world = GameManager.Instance != null ? GameManager.Instance.World : null;
             if (world == null)
@@ -619,33 +663,63 @@ namespace PortalMod
                 return portalPos;
             }
 
+            var frontColumnBase = portalPos + PortalOrientation.ForwardOffset(rotation);
+            if (world.IsChunkAreaLoaded(frontColumnBase.x, frontColumnBase.y, frontColumnBase.z) &&
+                TryFindSpawnableColumn(world, frontColumnBase, out var frontLanding))
+            {
+                return frontLanding;
+            }
+
+            if (TryFindSpawnableColumn(world, portalPos, out var insideLanding))
+            {
+                return insideLanding;
+            }
+
+            // No se encontro espacio valido ni al frente ni adentro del
+            // marco: quedarse con la posicion original del portal en vez de
+            // arriesgarse a subir/bajar demasiado (mismo fallback final que
+            // antes de la Feature 2).
+            return portalPos;
+        }
+
+        /// <summary>
+        /// Escanea verticalmente desde "columnBase" (primero hacia arriba,
+        /// despues hacia abajo) buscando la primera celda que pase
+        /// World.CanPlayersSpawnAtPos — misma logica/limites que usaba
+        /// originalmente FindLandingBlockPos antes de la Feature 2, extraida
+        /// a su propio metodo para poder probarla tanto en la columna "al
+        /// frente" del portal como, de fallback, en la columna original
+        /// (adentro del marco).
+        /// </summary>
+        private static bool TryFindSpawnableColumn(World world, Vector3i columnBase, out Vector3i result)
+        {
             const int maxScanUp = 2;
             for (var dy = 0; dy <= maxScanUp; dy++)
             {
-                var candidate = portalPos + new Vector3i(0, dy, 0);
+                var candidate = columnBase + new Vector3i(0, dy, 0);
                 // _bAllowToSpawnOnAirPos: true, igual que usa el propio
                 // PlayerMoveController.updateRespawn/TryAddRecoveryPosition
                 // al buscar una posicion de rescate.
                 if (world.CanPlayersSpawnAtPos(candidate.ToVector3(), true))
                 {
-                    return candidate;
+                    result = candidate;
+                    return true;
                 }
             }
 
             const int maxScanDown = 32;
             for (var dy = -1; dy >= -maxScanDown; dy--)
             {
-                var candidate = portalPos + new Vector3i(0, dy, 0);
+                var candidate = columnBase + new Vector3i(0, dy, 0);
                 if (world.CanPlayersSpawnAtPos(candidate.ToVector3(), true))
                 {
-                    return candidate;
+                    result = candidate;
+                    return true;
                 }
             }
 
-            // No se encontro espacio valido en el rango escaneado: quedarse
-            // con la posicion original del portal en vez de arriesgarse a
-            // subir/bajar demasiado.
-            return portalPos;
+            result = default(Vector3i);
+            return false;
         }
 
         private static void ApplyTravelBuff(EntityPlayer player)

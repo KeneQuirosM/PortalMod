@@ -164,6 +164,20 @@ namespace PortalMod
                 var knownStyle = PortalBiomes.GetStyleFromInactiveBlockName(__instance.GetBlockName());
                 API.Log($"portalBlock colocado en {blockPos} por {PortalIdentity.GetSteamId(player)} (estilo detectado: {knownStyle ?? "(ninguno, usara fallback)"}). Abriendo ventana de nombre de tag.");
 
+                // Feature 2 ("rotacion real del portal"): antes de este cambio
+                // portalBlock se colocaba siempre con el BlockValue.rotation por
+                // defecto que le asigna el motor, sin importar hacia donde
+                // miraba el jugador. Se reescribe aca, inmediatamente despues de
+                // la colocacion real (mismo punto donde el resto de este
+                // Postfix ya trata "blockPos"/"__instance" como confiables —
+                // ver comentario del metodo), usando la MISMA convencion de
+                // rotacion que despues lee PortalTeleport (punto de salida "al
+                // frente") y PortalExitIndicator (flecha) — ver
+                // PortalOrientation para el detalle completo y las
+                // advertencias de confianza sobre el mapeo real del motor.
+                var world = GameManager.Instance != null ? GameManager.Instance.World : null;
+                PortalOrientation.ApplyPlayerFacingRotation(world, blockPos, player);
+
                 // El bloque todavia no esta registrado en PortalManager: se registra
                 // recien cuando el jugador confirma un tag en la ventana (ver XUiPortalTag).
                 API.Log("[PortalMod] Llamando a XUiPortalTag.OpenForNewPortal...");
@@ -458,6 +472,14 @@ namespace PortalMod
                         ps.Play();
                     }
                 }
+
+                // Feature 2 ("indicador de salida"): agrega/actualiza la
+                // flecha que muestra por donde sale el jugador al usar este
+                // portal — ver PortalExitIndicator. Mismo hook (se reutiliza
+                // el mismo "modelTransform" ya resuelto arriba para las
+                // particulas) y misma proteccion contra re-disparos por
+                // pooling de chunk (EnsureIndicator no duplica si ya existe).
+                PortalExitIndicator.EnsureIndicator(modelTransform, _blockValue.rotation);
             }
             catch (Exception e)
             {
