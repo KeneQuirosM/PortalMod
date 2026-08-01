@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\kenet\\Desktop\\mod 7d\\Github\\PortalMod\\Harmony\\PortalMod.csproj": {}
+    "c:\\Users\\kenet\\Desktop\\mod 7d\\Github\\PortalMod\\Harmony\\PortalMod.csproj": {}
   },
   "projects": {
-    "C:\\Users\\kenet\\Desktop\\mod 7d\\Github\\PortalMod\\Harmony\\PortalMod.csproj": {
+    "c:\\Users\\kenet\\Desktop\\mod 7d\\Github\\PortalMod\\Harmony\\PortalMod.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\kenet\\Desktop\\mod 7d\\Github\\PortalMod\\Harmony\\PortalMod.csproj",
+        "projectUniqueName": "c:\\Users\\kenet\\Desktop\\mod 7d\\Github\\PortalMod\\Harmony\\PortalMod.csproj",
         "projectName": "PortalMod",
-        "projectPath": "C:\\Users\\kenet\\Desktop\\mod 7d\\Github\\PortalMod\\Harmony\\PortalMod.csproj",
+        "projectPath": "c:\\Users\\kenet\\Desktop\\mod 7d\\Github\\PortalMod\\Harmony\\PortalMod.csproj",
         "packagesPath": "C:\\Users\\kenet\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\kenet\\Desktop\\mod 7d\\Github\\PortalMod\\Harmony\\obj\\",
+        "outputPath": "c:\\Users\\kenet\\Desktop\\mod 7d\\Github\\PortalMod\\Harmony\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"

@@ -460,26 +460,23 @@ cada uno sigue sin probarse:
       (`API.cs`). Pendiente: confirmar que `GameManager` realmente expone
       esos dos métodos con esos nombres exactos (si Harmony no los
       encuentra, falla al cargar el mod con un error claro en el log).
-- [x] `EntityPlayer.PlatformUserIdentifierAbs` no existe — **corregido**
-      usando `player.entityId.ToString()` como identificador de jugador
-      (`PortalUtils.cs`). Confirmado en reporte real de servidor dedicado:
-      esto NO es estable entre reconexiones/sesiones — cada reconexión
-      rompe la asociación de portales del jugador (aparecen "sin dueño",
-      hay que destruir y volver a colocar el bloque para recuperarlos).
-      **Mitigado** (no confirmado 100%, ver `PortalIdentity.
-      TryResolveStablePlatformId`): antes de caer a `entityId`, se intenta
-      resolver por reflection un identificador de plataforma real
-      (candidatos: `PlatformUserIdentifierAbs`, `PlatformId`,
-      `CrossplatformId`, `UserIdentifier`, `SteamId`, `steamID`, buscados
-      en toda la jerarquía de `EntityPlayer`) — mismo patrón defensivo que
-      `PortalParty.TryGetPartyId`. Si ningún candidato existe en el
-      `Assembly-CSharp.dll` real de V3.0, el mod sigue compilando y cae al
-      comportamiento anterior (`entityId`, con el mismo bug). Pendiente:
-      probar en un servidor real si alguno de los candidatos resuelve
-      (revisar el log — si el ownerKey logueado en `RegisterPortal`
-      empieza con `plat:` en vez de ser un número corto, el fix está
-      activo) y, si no, decompilar `Assembly-CSharp.dll` para confirmar el
-      nombre real y agregarlo a la lista de candidatos.
+- [x] `EntityPlayer.PlatformUserIdentifierAbs` no existe — **CONFIRMADO Y
+      CORREGIDO DE RAÍZ** (sesión de auditoría profunda de multiplayer, ver
+      sección 12 para el detalle completo): el intento anterior (candidatos
+      de nombre buscados por reflection DIRECTO en `EntityPlayer`) nunca
+      podía funcionar — se inspeccionó el `Assembly-CSharp.dll` real
+      instalado y NINGÚN miembro de identidad de plataforma existe en
+      `EntityPlayer`/`EntityPlayerLocal`/`EntityAlive`/`Entity`. El dato
+      real vive en `ClientInfo` (uno por conexión de red, vía
+      `ConnectionManager.Instance.Clients.ForEntityId(entityId)`),
+      accedido ahora de forma directa (ya no por reflection, ver
+      `PortalIdentity.TryResolveStablePlatformId` en `PortalUtils.cs`):
+      `ClientInfo.CrossplatformId ?? ClientInfo.PlatformId` →
+      `.CombinedString`. Confirmado que compila contra el DLL real. Si el
+      ownerKey logueado en `RegisterPortal` empieza con `plat:` en vez de
+      ser un número corto (entityId), el fix está activo — probar en un
+      servidor real que esto pase para jugadores remotos, y que sobreviva
+      una reconexión (mismo `plat:...` antes y después).
 - [x] `windowManager.Open(...)` con 4 argumentos no existe — **corregido**
       invocando `Open` por reflection, probando el primer método `Open`
       cuyo primer parámetro sea `string` (`XUiPortalTag.cs`). Pendiente:
@@ -571,22 +568,39 @@ cada uno sigue sin probarse:
 
 ## 11. Pruebas de multijugador (si aplica)
 
+**Ver sección 12 para el análisis de causa raíz completo (sesión de
+auditoría dedicada) de los bugs reportados de multiplayer/servidores
+dedicados — dos causas raíz confirmadas y corregidas, una tercera
+identificada pero NO corregida (requiere testing en vivo, ver 12.3).**
+
 - [ ] Cada jugador gestiona sus propios portales por steamId
-      (`PortalIdentity.GetSteamId`).
+      (`PortalIdentity.GetSteamId`) — revisar que el ownerKey logueado
+      empiece con `plat:` para jugadores conectados por red (ver fix en
+      sección 10.1 y detalle en 12.1).
 - [ ] Los portales de un jugador no interfieren con los de otro, incluso
       usando el mismo tag.
 - [ ] El teletransporte funciona en servidor dedicado (no solo en
-      single-player/host).
-- [ ] **Portales compartidos en party**: dos jugadores en la misma party;
-      uno coloca un portal INMEDIATAMENTE después de conectarse (antes de
-      unirse a la party, si es posible, para forzar el escenario de cruce
-      de identidad — ver `PortalManager.ReassignSteamId`); el otro miembro
-      debe poder usarlo apenas la migración a la party se complete (hasta
-      ~10s de retraso por el sondeo, ver sección 11.1 más abajo sobre
-      party). Revisar el log por
-      `PortalIdentity: id de plataforma estable resuelto ... reasignando
-      estado` y `ReassignSteamId: ... -> ... (cruce de identidad
-      resuelto...)` si el fallback llegó a usarse antes de resolver.
+      single-player/host) — **ver 12.3**: el registro de un portal
+      colocado por un cliente remoto puede no llegar nunca al
+      `PortalManager` autoritativo del servidor; confirmar específicamente
+      si esto ocurre antes de asumir que el resto de la Feature funciona.
+- [ ] **Portales compartidos en party**: dos jugadores en la misma party
+      real del juego (creada/unida desde la UI de party nativa, NO el
+      sistema de "grupo" de este mod). Con el fix de la sección 12.2
+      (`PortalParty.TryGetPartyId` ahora usa `EntityPlayer.Party.PartyID`
+      directo, confirmado contra el DLL real), el ownerKey de AMBOS
+      jugadores debe resolver a `party:<PartyID>` — revisar el log
+      `Portal registrado para key: party:X (party: True)` para cada uno.
+      Antes de este fix, `TryGetPartyId` devolvía `false` SIEMPRE (ver
+      12.2) — si esto se prueba con el DLL viejo, nunca va a funcionar.
+- [ ] Un jugador coloca un portal INMEDIATAMENTE después de conectarse
+      (para forzar el escenario de cruce de identidad — ver
+      `PortalManager.ReassignSteamId`); el mismo jugador (no otro) debe
+      seguir teniendo acceso a su propio portal sin interrupción. Revisar
+      el log por `PortalIdentity: id de plataforma estable resuelto ...
+      reasignando estado` y `ReassignSteamId: ... -> ... (cruce de
+      identidad resuelto...)` si el fallback llegó a usarse antes de
+      resolver `ClientInfo` (ver 12.1).
 
 ## 11.1 Pruebas de la auditoría de estabilidad (ver AUDIT.md)
 
@@ -615,6 +629,511 @@ Puntos concretos a probar en el juego real:
 - [ ] Provocar intencionalmente un error en medio de una sesión (por ejemplo
       con datos de mundo corruptos) y confirmar que el mod loguea el error
       con `API.LogError` en vez de crashear el proceso o congelar el juego.
+
+## 12. Análisis de causa raíz — Multiplayer / servidores dedicados
+
+Sesión de auditoría dedicada, pedida específicamente para los síntomas
+reportados por usuarios:
+
+1. El dueño del portal puede usarlo sin problema.
+2. Los compañeros de party no pueden usarlo.
+3. Si el compañero construye su propio portal, funciona algunas veces pero
+   luego deja de funcionar completamente.
+4. Ninguno puede usar los portales del otro.
+5. En servidores dedicados los portales se pierden al reconectarse.
+
+**Metodología**: a diferencia de sesiones anteriores (sin acceso al DLL
+real), esta vez se inspeccionó `Assembly-CSharp.dll` directamente vía
+`Reflection.ReflectionOnlyLoadFrom` (sin ejecutar el ensamblado) para
+confirmar o refutar cada candidato de nombre usado por reflection en
+`PortalParty.cs`/`PortalUtils.cs`. Se leyeron completos: `PortalManager.cs`,
+`PortalParty.cs`, `PortalUtils.cs` (`PortalIdentity`), `PortalTeleport.cs`,
+`PortalBlockPatch.cs`, `PortalOrientation.cs`, `PortalConfig.cs`,
+`XUiPortalTag.cs`, `API.cs`.
+
+Se encontraron **tres** causas raíz distintas. Las primeras dos están
+**confirmadas contra el DLL real y corregidas**. La tercera está
+**identificada con alta confianza pero NO corregida** — corregirla bien
+requiere una capa de red nueva (NetPackage/RPC) que no se puede validar sin
+un servidor real para iterar, y un intento a ciegas arriesga romper la
+sincronización de red de TODO el mod si la implementación fuera incorrecta;
+se documenta en detalle en 12.3 para que se corrija con testing en vivo.
+
+### 12.1 Causa raíz 1 (CORREGIDA): identidad estable de jugador nunca resolvía
+
+`PortalIdentity.TryResolveStablePlatformId` (antes de este fix) buscaba un
+identificador de plataforma estable como propiedad/campo **directo** de
+`EntityPlayer`, probando los candidatos `PlatformUserIdentifierAbs`,
+`PlatformId`, `CrossplatformId`, `UserIdentifier`, `SteamId`, `steamID`.
+
+**Confirmado por reflection contra el DLL real**: se enumeraron TODOS los
+miembros de `EntityPlayer`, `EntityPlayerLocal`, `EntityAlive` y `Entity` —
+**ninguno** de esos candidatos existe ahí, ni ningún otro miembro
+relacionado con identidad de plataforma. La búsqueda apuntaba al objeto
+equivocado desde el principio.
+
+El dato real vive en un objeto completamente distinto, `ClientInfo` (uno
+por conexión de red activa, mantenido por `ConnectionManager` — el mismo
+objeto que el juego ya usa para autenticación/anti-cheat/networking):
+
+```
+ConnectionManager.Instance.Clients.ForEntityId(int entityId) -> ClientInfo
+ClientInfo.CrossplatformId / ClientInfo.PlatformId -> PlatformUserIdentifierAbs
+PlatformUserIdentifierAbs.CombinedString -> string real y estable
+```
+
+Todos esos miembros son **públicos** y viven en el namespace global (igual
+que `World`/`EntityPlayer`/etc.), confirmado por reflection y por una
+compilación real exitosa contra el DLL instalado.
+
+**Impacto real**: como la búsqueda nunca miraba el lugar correcto,
+`TryResolveStablePlatformId` devolvía `null` siempre, para TODO jugador —
+`GetSteamId` caía SIEMPRE al fallback `entityId.ToString()`, inestable
+entre reconexiones. Esto explica el síntoma 5 (portales perdidos al
+reconectarse) de forma completa: no era un caso raro sin cubrir, el
+mecanismo de id estable nunca funcionó desde que se agregó.
+
+**Fix**: `PortalIdentity.TryResolveStablePlatformId` (`PortalUtils.cs`) ahora
+llama directo a la cadena real de arriba (con `?.`/`??` para tolerar
+conexiones sin cliente de red, ver 12.1.1), sin ninguna capa de reflection.
+Se prefiere `CrossplatformId` (el id unificado del sistema de crossplay EOS
+de V3.0) y se cae a `PlatformId` si el primero no resuelve. Se eliminaron
+`StableIdPropertyCandidates`, `StableIdMemberCandidates`,
+`_stableIdMemberCache`, `SafeFindStableIdMemberInHierarchy`,
+`FindStableIdMemberInHierarchy`, `ExtractNestedId`, `IsSimpleIdType` (dead
+code, ya no hace falta ninguna reflection). Se conserva el mecanismo de
+cache por entityId y el de "cruce fallback→estable" (`ReassignSteamId`),
+ahora con una razón real para dispararse.
+
+#### 12.1.1 Límite conocido (no cubierto por este fix)
+
+`ClientInfo` solo existe para conexiones de red reales (servidor dedicado,
+o el propio host jugando con la red activa). En un mundo verdaderamente
+offline/singleplayer (sin `ConnectionManager` con clientes), `ForEntityId`
+puede devolver `null` para el jugador local — en ese caso se preserva el
+fallback a `entityId.ToString()` (mismo comportamiento que antes de este
+fix, pero ahora solo alcanzado en el caso realmente sin red en vez de en
+todo multiplayer). **Probar**: confirmar que un singleplayer puro (sin
+ningún tipo de hosting) sigue funcionando igual que antes.
+
+### 12.2 Causa raíz 2 (CORREGIDA): detección de party nunca resolvía
+
+`PortalParty.TryGetPartyId` (antes de este fix) probaba varios candidatos de
+nombre por reflection, con un comentario propio `TODO CRÍTICO — SIN
+CONFIRMAR CONTRA Assembly-CSharp.dll REAL`.
+
+**Confirmado por reflection contra el DLL real**: el sistema de party SÍ
+existe en V3.0.1 y es simple:
+
+- `EntityPlayer.Party` — propiedad **pública**, tipo `Party`, declarada
+  directo en `EntityPlayer` (no en una clase base), `null` si el jugador no
+  está en ninguna party.
+- `Party.PartyID` — campo **público**, `Int32`, el identificador real.
+
+El intento anterior fallaba **siempre** (para cualquier jugador, en
+cualquier party real — no un caso raro) por **dos** bugs distintos, ambos
+confirmados:
+
+1. **Sí** encontraba la propiedad `Party` (estaba en la lista de
+   candidatos y existe de verdad), pero después buscaba el ID **dentro**
+   de ese objeto con los candidatos `PartyId`/`Id`/`GroupId`/`TeamId`/
+   `partyId`/`id` — el campo real es `PartyID` (mayúscula "ID", no "Id").
+   `Type.GetField`/`GetProperty` son **case-sensitive** por defecto:
+   `"PartyId"` nunca hace match contra `"PartyID"`, así que la extracción
+   del ID fallaba siempre incluso cuando el objeto `Party` real ya se
+   había encontrado.
+2. El fallback por `PartyManager` (clase estática/singleton) sí encontraba
+   la clase real `PartyManager` y su método real `GetParty(Int32)`, pero
+   fallaba resolviendo la instancia singleton: buscaba una propiedad o
+   campo estático llamado `Instance` — el real es la propiedad `Current`
+   (el campo interno es `instance`, minúscula). Como `GetParty(Int32)` no
+   es estático, sin poder resolver la instancia el candidato se descartaba
+   en silencio.
+
+**Impacto real**: `TryGetPartyId` devolvía `false` siempre — `GetPortalKey`
+nunca devolvía `"party:X"` para nadie, todos los jugadores se trataban como
+solitarios sin importar su party real dentro del juego. Esto explica los
+síntomas 2 y 4 (compañeros de party no pueden usar portales del otro, en
+ninguna dirección) de forma completa y determinística: nunca funcionó, para
+nadie, no era una condición de carrera intermitente.
+
+**Fix**: `PortalParty.TryGetPartyId` (`PortalParty.cs`, reescrito por
+completo) ahora llama directo a `player.Party` / `party.PartyID.
+ToString(CultureInfo.InvariantCulture)`, sin ninguna reflection. Se
+eliminó toda la capa de candidatos/caches (`InstancePartyPropertyCandidates`,
+`PartyIdMemberCandidates`, `StaticManagerTypeNameCandidates`,
+`_instancePropertyCache`, `_staticManagerResolved`/`_staticManagerMethod`/
+`_staticManagerTarget`, `TryGetPartyIdFromInstanceProperty`,
+`TryGetPartyIdFromStaticManager`, `ResolveStaticManager`,
+`FindPropertyInHierarchy`, `ExtractIdFromPartyObject`, `IsSimpleIdType`,
+`GetSingletonInstance`, `SafeGetType`) — mucho más simple, correcto, y sin
+el costo de reflection (incluyendo el escaneo caro de
+`AppDomain.CurrentDomain.GetAssemblies().Select(a => a.GetTypes())` que
+antes solo corría una vez pero nunca encontraba nada útil de todas formas).
+
+**Nota de diseño sin confirmar (anotar en el juego real)**: no se pudo
+confirmar sin el juego real si un jugador que NUNCA tocó el sistema de
+party del juego (nunca creó/se unió a una) tiene `EntityPlayer.Party ==
+null` (comportamiento esperado/asumido, estándar en juegos con sistema de
+party opt-in) o si el motor le asigna automáticamente algún objeto `Party`
+por defecto con un `PartyID` compartido/sentinel (ej. `0`) — este segundo
+caso sería grave (todos los jugadores "solitarios" compartirían
+accidentalmente sus portales entre sí). **Probar**: dos jugadores que
+NUNCA se unieron a ninguna party no deben poder usar los portales del otro
+(deben seguir tratándose como solitarios independientes).
+
+### 12.3 Causa raíz 3 (IDENTIFICADA, NO CORREGIDA): el registro de un portal nunca se sincroniza al servidor autoritativo
+
+Esta es, con alta probabilidad, la explicación real y completa del síntoma
+3 ("el compañero construye su propio portal, funciona algunas veces pero
+luego deja de funcionar") y de por qué los síntomas 2/4 **seguirían
+ocurriendo incluso después del fix de la sección 12.2** en una topología de
+**servidor dedicado real** (proceso separado de todos los clientes) — el
+fix de 12.2 es necesario pero no alcanza a resolverlo solo.
+
+**Cadena de razonamiento (confirmada por inspección de código + tipos
+reales, no por testing en vivo — ver qué falta confirmar al final)**:
+
+1. `PortalManager.Instance` es un singleton **por proceso**
+   (`private static PortalManager _instance`). Un servidor dedicado y cada
+   cliente conectado son procesos **distintos**, cada uno con su PROPIA
+   instancia en memoria — no hay ningún mecanismo que las sincronice.
+2. `XUiPortalTag.Confirm()` (que llama a
+   `PortalManager.Instance.RegisterPortal`/`RenamePortal`) es un callback
+   de click de una ventana XUi — **solo puede ejecutarse en un cliente**
+   (donde se renderiza la UI), nunca en un servidor headless.
+   `OpenWindow()` en el mismo archivo ya lo documenta explícitamente:
+   solo abre si `player as EntityPlayerLocal` no es null, con un TODO
+   propio: *"en un jugador remoto la apertura real debería dispararse via
+   NetPackage en su propio cliente"*.
+3. **Confirmado por tipos reales**: `EntityPlayerLocal` es la **única**
+   subclase de `EntityPlayer` en todo el ensamblado. Un jugador remoto,
+   visto desde el servidor (dedicado, o el propio host en un listen
+   server), **nunca** es `EntityPlayerLocal` — solo lo es en el proceso
+   del cliente que lo controla directamente. Esto significa que
+   `Block_OnBlockPlaceBefore_Patch`/`Block_OnBlockActivated_Patch`
+   (que llaman a `OpenWindow`) solo logran abrir la ventana de
+   nombrado/renombrado cuando ese Postfix/Prefix corre en un proceso
+   donde ese jugador específico ES el local — es decir, **en el propio
+   cliente del jugador que coloca el bloque**, nunca en el servidor.
+4. Confirmado en `API.cs` (comentario de `GameManager_Update_Patch`) que
+   el motor de estos hooks de bloque corre tanto en cliente como en
+   servidor (arquitectura estándar de predicción de cliente: el cliente
+   procesa localmente la colocación para que se sienta instantánea,
+   mientras el servidor procesa la misma colocación de forma autoritativa
+   por separado — confirmado que existe ese roundtrip real via
+   `NetPackageSetBlock`/`NetPackageSetBlockResponse`, ambos presentes en
+   el DLL real).
+5. Conclusión: `RegisterPortal`/`RenamePortal` **solo se ejecuta en el
+   proceso del cliente que coloca/nombra el bloque**, mutando la
+   `PortalManager.Instance` de ESE cliente únicamente. El servidor
+   (dedicado, o el host en un listen server) nunca se entera — su propia
+   `PortalManager.Instance`, la que realmente usa
+   `PortalTeleport.Tick()` server-side (el único lugar donde
+   `CheckPlayerPortalCollision` puede mover a un jugador de forma
+   autoritativa) sigue sin ese portal.
+
+**Por qué esto explica los 5 síntomas exactamente**:
+
+- **Síntoma 1** (el dueño puede usarlo sin problema): quien coloca un
+  portal siempre puede usarlo él mismo, sin importar host/dedicado/cliente
+  remoto — su propio `PortalTeleport.Tick()` (que corre en TODOS los
+  procesos, confirmado en `API.cs`) revisa su PROPIA `PortalManager.
+  Instance`, que SÍ tiene registrado lo que él mismo colocó. Es
+  autoconsistente localmente, no depende de ningún servidor.
+- **Síntomas 2 y 4** (compañeros no pueden usar portales del otro): el
+  registro de un portal nunca sale del proceso donde se colocó — ningún
+  otro cliente (ni el servidor) tiene forma de enterarse, con o sin el fix
+  de party de 12.2. El fix de 12.2 es **necesario** (sin él, ni siquiera
+  el caso donde SÍ debería funcionar — mismo proceso — resolvía la key de
+  party correctamente) pero **no alcanza** para portales registrados por
+  OTRO proceso.
+- **Síntoma 3** (el compañero funciona algunas veces, después no): el
+  compañero (cliente remoto) SÍ logra nombrar/registrar sus DOS propios
+  portales — todo ocurre en su propio proceso, autoconsistente. Su propio
+  `Tick()` local encuentra el par y ejecuta `SetPosition` localmente —
+  "funciona" (el jugador se ve moverse en su propia pantalla). Pero el
+  servidor, que es la autoridad real de posición de ese jugador en un
+  servidor dedicado, nunca aprobó ese movimiento (su propia
+  `PortalManager.Instance` no tiene ningún registro) — la reconciliación
+  de posición/anti-cheat del servidor eventualmente corrige/revierte al
+  cliente, y el "teletransporte" deja de sentirse como que funciona.
+- **Síntoma 5** (portales perdidos al reconectar en servidor dedicado):
+  además de la causa raíz 1 (12.1, ya corregida), `Save()`/`Load()` (via
+  `GameIO.GetSaveGameDir()`) persisten a la carpeta de guardado del
+  **proceso que llama** — en un servidor dedicado remoto real, esa carpeta
+  es distinta por completo entre el cliente y el servidor. Un portal que
+  solo vivió en la `PortalManager.Instance` de un cliente nunca se guardó
+  en el `portals.dat` del servidor para empezar.
+
+**Qué NO se implementó en esta sesión, y por qué**: una corrección
+completa requiere una capa de sincronización cliente→servidor real (un
+`NetPackage` custom, o reutilizar el canal de comandos de consola
+existente — `NetPackageConsoleCmdClient`/`NetPackageConsoleCmdServer`, que
+sí están confirmados en el DLL) para que el cliente **pida** el registro
+al servidor en vez de mutar su propia copia local, y que el servidor sea
+la única fuente de verdad. No se encontró en `Assembly-CSharp.dll` una
+clase base tipo `ConsoleCmdAbstract` para registrar comandos custom (puede
+vivir en otro ensamblado no revisado en esta sesión), y registrar un
+`NetPackage` custom nuevo en el `NetPackageManager` de 7 Days to Die
+históricamente ha sido fecho a un mecanismo interno frágil para mods de
+terceros — implementarlo a ciegas, sin poder probarlo contra un servidor
+real, arriesga romper la sincronización de red de TODO el mod (radio de
+impacto mucho mayor que el bug que se busca arreglar) si algo en el
+registro/protocolo queda mal. Se prefirió documentar la causa raíz
+completa y confirmada en vez de entregar una implementación de red sin
+poder validarla.
+
+**Siguiente paso recomendado** (para quien continúe este trabajo, con
+acceso a un servidor real para iterar):
+
+1. Definir un `NetPackage` custom (o investigar si existe una clase base
+   de comandos de consola en otro ensamblado del juego) para
+   `RegisterPortal`/`RenamePortal`/`UnregisterPortal`.
+2. En el cliente, `XUiPortalTag.Confirm()` debe **enviar la solicitud al
+   servidor** en vez de llamar a `PortalManager.Instance.RegisterPortal`
+   directo — mostrar el HUD solo cuando llegue la respuesta del servidor
+   (éxito/tag en uso/etc.), no de forma optimista.
+3. En el servidor, procesar el paquete y mutar la ÚNICA
+   `PortalManager.Instance` autoritativa (la del proceso servidor).
+4. Considerar además restringir la ejecución real de
+   `CheckPlayerPortalCollision`/`ExecuteTeleport` (en
+   `PortalTeleport.Tick()`) a `ConnectionManager.Instance.IsServer == true`
+   — evita que un cliente ejecute una copia local "fantasma" del
+   teletransporte que compita con la del servidor. **No se aplicó este
+   cambio en esta sesión de forma aislada**: sin el paso 1-3 primero,
+   restringirlo a servidor haría que un portal registrado solo
+   client-side (como hoy) deje de "funcionar algunas veces" para no
+   funcionar NUNCA — un cambio de comportamiento peor sin la sync real que
+   lo sostenga.
+
+**Qué falta confirmar en el juego real** para validar esta cadena de
+razonamiento (no se pudo ejecutar nada de esto sin el juego):
+
+- [ ] Confirmar con logging temporal que `Block_OnBlockPlaceBefore_Patch`
+      efectivamente corre en el cliente de un jugador remoto (no solo en
+      el servidor) al colocar un portalBlock — si NO corre ahí, la cadena
+      de razonamiento de arriba está incompleta y hay que revisar de
+      nuevo desde el paso 3.
+- [ ] Confirmar en un servidor dedicado REAL (proceso separado, no listen
+      server) que un portal registrado por un cliente remoto nunca
+      aparece en el log del servidor (`Portal registrado: ownerKey=...`
+      debería aparecer SOLO en el log del cliente que lo coloca, nunca en
+      la consola/log del servidor).
+- [ ] Confirmar si el síntoma 3 coincide en el tiempo con algún log de
+      corrección de posición / anti-cheat del lado servidor (buscar
+      "requiresAntiCheat", rechazo de posición, o similar en el log del
+      servidor en el momento exacto en que el compañero reporta que "deja
+      de funcionar").
+
+## 13. Sincronización cliente-servidor del registro de portales (causa raíz 3, CORREGIDA)
+
+Implementación completa de lo identificado en la sección 12.3. A diferencia
+de esa sesión (sin acceso al DLL, solo razonamiento por tipos), esta vez se
+**decompiló** `Assembly-CSharp.dll` con `ilspycmd` (instalado localmente
+como herramienta de `dotnet tool`) además de usar reflection — cada clase
+mencionada abajo se leyó como código C# real generado por el decompilador,
+no se adivinó ningún nombre/firma.
+
+### 13.1 Qué se confirmó del sistema de red real (antes de escribir código)
+
+- **`NetPackage`** (clase base real, `abstract`): `read(PooledBinaryReader)`
+  y `ProcessPackage(World, GameManager)` son abstractos; `write
+  (PooledBinaryWriter)` es virtual con una implementación base que escribe
+  el `PackageId` (`ushort`) — **toda subclase debe llamar
+  `base.write(_writer)` primero**, exactamente como hace el propio
+  `NetPackageSetBlock` (ver más abajo). `PackageDirection` (virtual,
+  default `Both`) controla si un paquete es válido `ToServer`/`ToClient`/
+  ambos — confirmado en uso real: `NetPackageConsoleCmdServer` override a
+  `ToServer`.
+- **Registro de paquetes: DINÁMICO, no un array/enum fijo** — este era el
+  riesgo real que se quería descartar antes de escribir nada (ver sección
+  12.3, "por qué no se implementó a ciegas"). Decompilando
+  `NetPackageManager`: su constructor estático llama
+  `ReflectionHelpers.FindTypesImplementingBase(typeof(NetPackage), ...)`,
+  que a su vez llama `ModManager.GetLoadedAssemblies()` — **la misma API
+  que ya usa este mod en `API.cs`** para detectar SCore — e incluye
+  cualquier ensamblado de mod cargado, este incluido. Cualquier subclase de
+  `NetPackage` definida en `PortalMod.dll` se descubre sola por nombre de
+  clase (`knownPackageTypes`, un diccionario `string -> Type`), sin tocar
+  ningún array fijo del juego. `NetPackageManager.StartServer()` les asigna
+  IDs numéricos en tiempo de ejecución (empezando en 1, después del ID 0
+  reservado) y se los manda a cada cliente al conectarse
+  (`IdMappingsReceived(string[] _mappings)`) — si un cliente no tiene una
+  clase que el servidor sí conoce, el juego lo desconecta con un error
+  claro (`"Unknown package type ..."` + `EKickReason.UnknownNetPackage}`),
+  nunca corrompe la sesión de nadie más. **Esto confirma que agregar un
+  `NetPackage` propio es seguro para un mod de terceros** — no hay ningún
+  array fijo que pueda pisarse ni colisionar con otro mod o con una
+  actualización del juego.
+- **Envío real**: `ConnectionManager.Instance.SendToServer(NetPackage,
+  bool _flush)` (cliente → servidor), `ConnectionManager.Instance.
+  SendPackage(NetPackage, ...)` (servidor → todos los clientes con login
+  terminado — `clientInfo.loginDone`, con filtros opcionales de rango/
+  entidad que no se usan aquí), `ClientInfo.SendPackage(NetPackage)`
+  (servidor → un cliente puntual).
+- **`ConnectionManager.Instance.IsServer`** (`protocolManager.IsServer`) es
+  el chequeo de autoridad real usado en TODO este fix. Confirmado
+  decompilando `ConnectionManager.IsSinglePlayer`: `IsServer &&
+  ClientCount() == 0` — es decir, **singleplayer puro YA es un caso de
+  `IsServer == true`** (el juego corre un servidor interno incluso sin
+  ningún cliente remoto conectado). `IsServer` es también true en un listen
+  server (el propio host) y en un servidor dedicado real. Es `false`
+  únicamente en un cliente remoto puro — exactamente la distinción que
+  hacía falta, sin tener que manejar los tres casos "verdaderos" por
+  separado en ningún lado de este mod.
+- **Modelo real usado como referencia de implementación**:
+  `NetPackageSetBlock` (coloca/destruye bloques — el mismo tipo de flujo
+  cliente→servidor→broadcast que necesitaba este fix) y
+  `NetPackageConsoleCmdServer`/`Client` (para el patrón `Setup()` +
+  `PackageDirection` explícito). Ambos decompilados enteros antes de
+  escribir una sola línea propia.
+- **Evento de conexión real usado para el sync inicial**:
+  `ModEvents.SPlayerSpawnedInWorldData` (ya enganchado en `API.cs` desde
+  antes de esta sesión) trae `ClientInfo` **directo** como campo — no hace
+  falta re-resolverlo vía `ConnectionManager.Instance.Clients.
+  ForEntityId(...)` (aunque esa API también existe y es la que usa
+  `PortalIdentity.cs`, ver sección 12.1).
+
+### 13.2 Diseño de la solución
+
+- **`PortalManager.PortalSyncEntry`** (struct pública anidada, nueva):
+  aplana `ownerKey`/`tag`/posición/bioma/estilo — una fila autocontenida
+  fácil de mandar por red.
+- **`PortalManager.GetSyncSnapshot()`** (nuevo, servidor): construye la
+  lista completa de `PortalSyncEntry` a partir de `_portals`/`_biomes`/
+  `_styles`.
+- **`PortalManager.ApplyFullSync(List<PortalSyncEntry>)`** (nuevo,
+  cliente): **reemplaza por completo** `_portals`/`_positionLookup`/
+  `_biomes`/`_styles` — nunca fusiona. Un snapshot completo siempre gana
+  sobre lo que hubiera antes, así un cliente nunca arrastra una entrada que
+  el servidor ya no tiene (por ejemplo un portal destruido mientras ese
+  cliente estaba desconectado). Deliberadamente NO toca `_cooldowns`/
+  `_originalOwnerSteamId`/`_lastKnownPortalKey`/`_pendingPartyKey` (estado
+  de sesión que ya no se usa del lado cliente, ver más abajo) ni marca
+  `_dirty` (esto no es un cambio que haya que persistir localmente).
+- **Tres `NetPackage` nuevos** (`PortalNetSync.cs`):
+  - `NetPackagePortalRequest` (`ToServer`): "quiero nombrar/renombrar el
+    portal en esta posición con este tag". Solo manda `tag` + posición —
+    **nunca un ownerKey ni un estilo mandado por el cliente**: el servidor
+    resuelve el dueño real a partir de `Sender` (la identidad de conexión
+    real, no falsificable por el cliente) y el estilo a partir del bloque
+    real ya colocado en el mundo, mismo criterio que ya usaba
+    `PortalBlockPatch.HandlePortalActivation` para decidir "nombrar" vs
+    "renombrar" (re-derivado en el servidor, no confiado del cliente).
+  - `NetPackagePortalRequestResult` (`ToClient`, al remitente original):
+    el resultado real (`PortalManager.RegisterResult` + tag + si fue
+    rename) para que el cliente muestre el mismo mensaje de HUD y
+    cierre/mantenga abierta la ventana igual que el camino síncrono de
+    antes.
+  - `NetPackagePortalSync` (`ToClient`, a uno o a todos): snapshot completo
+    (ver arriba). Se manda el registro **entero** en cada cambio (no un
+    delta incremental) a propósito — la cantidad de portales de un
+    servidor típico es pequeña (decenas, no miles) y esto solo se dispara
+    en eventos raros iniciados por un jugador, nunca por tick; el costo
+    extra es insignificante comparado con el riesgo de un protocolo de
+    deltas mal sincronizado.
+- **`PortalNetSync`** (clase estática, orquestación): `SendFullSyncToClient
+  (ClientInfo)` (sync inicial) y `BroadcastFullSyncIfServer()` (tras
+  cualquier mutación real) — ambos no-op si no corren en el servidor.
+
+### 13.3 Cambios de autoridad (qué corre dónde ahora)
+
+- **`XUiPortalTag.Confirm()`**: si `ConnectionManager.Instance.IsServer`
+  (host/dedicado/singleplayer), aplica directo contra `PortalManager.
+  Instance` — mismo comportamiento exacto que antes de este fix, sin red
+  de por medio. Si NO es servidor (cliente remoto), manda
+  `NetPackagePortalRequest` y **espera la respuesta real** antes de
+  mostrar cualquier mensaje o cerrar la ventana (nunca optimista) — ver
+  `XUiPortalTag.HandleServerResult`, invocado desde
+  `NetPackagePortalRequestResult.ProcessPackage`.
+- **`Block_OnBlockDestroyedBy_Patch`**: la baja real (`UnregisterPortal`)
+  ahora solo ocurre si `ConnectionManager.Instance.IsServer` — igual que la
+  colocación, la destrucción de bloque también corre por predicción del
+  lado cliente (confirmado indirectamente: el mismo patrón
+  `NetPackageSetBlock` maneja colocación Y destrucción, ver
+  `BlockChangeInfo`), así que un cliente remoto que dispara este mismo
+  Postfix por predicción ya no hace nada — se entera de la baja real por
+  el broadcast del servidor.
+- **`PortalManager.Load()`/`Save()`**: gateados a `ConnectionManager.
+  Instance.IsServer`. Un cliente remoto puro ya no lee ni escribe su
+  propio `portals.dat` local — ese archivo nunca fue el mismo que el del
+  servidor real en un servidor dedicado remoto, y ahora el cliente recibe
+  la verdad por red. Sigue funcionando exactamente igual que antes para
+  singleplayer/host (que ya cumplían `IsServer == true`).
+- **`PortalTeleport.Tick()`**: `ProcessPendingTeleports` y el loop de
+  colisión jugador↔portal (`CheckPlayerPortalCollision`, que incluye el
+  chequeo de cambio de party) ahora solo corren si `ConnectionManager.
+  Instance.IsServer`. Antes de este fix, un cliente remoto ejecutaba esta
+  MISMA lógica con su propia copia local (y desincronizada) de
+  `PortalManager`, moviendo al jugador con `SetPosition` sin que el
+  servidor real lo aprobara jamás — la causa más probable del síntoma
+  "funciona un par de veces y después deja de funcionar" (el servidor
+  termina revirtiendo/ignorando una posición que nunca aprobó). Ahora la
+  única autoridad real para decidir "esto teletransporta" es siempre el
+  servidor.
+
+### 13.4 Problema de compilación encontrado y resuelto
+
+Al compilar contra el `Assembly-CSharp.dll` real: `PooledBinaryWriter`/
+`PooledBinaryReader` (las clases reales usadas por `NetPackage.read`/
+`write`) agregan sus propias sobrecargas de `Write`/`Read` con
+`ReadOnlySpan<T>` (el juego corre sobre un runtime moderno con soporte de
+Span) — el `net48` clásico de este proyecto no tiene `System.
+ReadOnlySpan<T>` en su `mscorlib` de referencia, y el compilador no podía
+resolver el conjunto de sobrecargas de esos tipos en absoluto (error
+`CS0518`), ni siquiera para las sobrecargas simples (`int`/`string`/`bool`)
+que sí se usan. Se probó agregar el paquete NuGet oficial `System.Memory`
+(el polyfill estándar de Microsoft para esto en net48) pero generó un
+conflicto de versión real entre `System.Runtime.CompilerServices.Unsafe`
+4.0.4.1 (traído por ese paquete) y 6.0.0.0 (el que espera `Assembly-
+CSharp.dll`), y el error de compilación persistía. **Fix real, sin
+dependencias nuevas**: en `PortalNetSync.cs`, todas las llamadas a
+`_reader`/`_writer` pasan primero por una variable local tipada
+explícitamente como `System.IO.BinaryReader`/`BinaryWriter` (la clase BASE
+real, ya completa en el `mscorlib` de net48, sin ninguna sobrecarga de
+Span) en vez de llamar directo sobre el tipo `Pooled...` derivado — mismos
+bytes exactos en el wire (son los mismos métodos heredados), el compilador
+simplemente ya no necesita resolver las sobrecargas adicionales que este
+mod no usa. Confirmado: compila limpio (0 errores, 0 advertencias).
+
+### 13.5 Qué falta confirmar en el juego real
+
+No se pudo probar nada de esto en el entorno de desarrollo (sin el juego).
+Verificar específicamente:
+
+- [ ] Un cliente remoto (servidor dedicado real, proceso separado) coloca y
+      nombra un portal: debe aparecer `NetPackagePortalRequest` procesado
+      en el log del **servidor** (no en el del cliente), y el cliente debe
+      recibir el mensaje de HUD correcto (activo/huérfano/tag en uso) sin
+      demora perceptible.
+- [ ] Un segundo cliente, ya conectado, ve el portal del primero
+      aparecer/actualizarse sin necesidad de reconectarse (prueba del
+      broadcast tras `RegisterPortal`).
+- [ ] Un jugador que se conecta DESPUÉS de que ya existen portales los ve
+      todos de entrada (revisar el log por `PortalManager: sincronizacion
+      recibida del servidor aplicada (N posiciones)` apenas aparece en el
+      mundo).
+- [ ] Destruir un portal desde un cliente remoto lo desregistra realmente
+      del lado servidor (y el resto de los clientes conectados dejan de
+      verlo como registrado).
+- [ ] El camino "soy servidor" (host de listen server, o singleplayer)
+      sigue funcionando exactamente igual que antes de este fix — sin
+      ningún paquete de red de por medio, mismos mensajes, mismo timing.
+- [ ] **Caso especial a confirmar**: si el paquete no llega a tiempo o se
+      pierde (timeout de red real, no simulable aquí), la ventana de tag
+      queda abierta indefinidamente sin respuesta — no hay timeout/reintento
+      implementado en `Confirm()`. Si esto resulta molesto en la práctica,
+      agregar un timeout del lado cliente (por ejemplo, cerrar la ventana y
+      avisar "no se pudo confirmar con el servidor" si no llega respuesta
+      en unos segundos).
+- [ ] Confirmar que el gateo de `Block_OnBlockDestroyedBy_Patch`/
+      `Block_OnBlockPlaceBefore_Patch` a predicción del lado cliente es
+      correcto — es decir, que el log de colocación/destrucción SÍ
+      aparece también del lado cliente para un jugador remoto (confirmaría
+      la cadena de razonamiento completa de la sección 12.3), y que
+      gatearlo a `IsServer` en el punto de destrucción no rompe ningún otro
+      efecto secundario esperado del lado cliente.
 
 ## Cómo reportar un bug
 

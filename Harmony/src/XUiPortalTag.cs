@@ -286,38 +286,122 @@ namespace PortalMod
                     return;
                 }
 
-                var result = _pendingMode == Mode.NewPortal
-                    ? PortalManager.Instance.RegisterPortal(_pendingPlayer, tag, _pendingBlockPos, _pendingStyle)
-                    : PortalManager.Instance.RenamePortal(_pendingPlayer, _pendingBlockPos, tag);
-
-                switch (result)
+                // FIX real de causa raiz 3 (ver PortalNetSync.cs / TESTING.md
+                // seccion 12.3/13): "PortalManager.Instance" solo es
+                // autoritativo del lado servidor — un cliente remoto NUNCA
+                // debe mutarlo directo (eso era exactamente el bug: el
+                // registro se quedaba atrapado en la copia local del
+                // cliente, sin que el servidor se enterara jamas). Si este
+                // proceso ES el servidor (dedicado, host de listen server, o
+                // singleplayer — ver ConnectionManager.Instance.IsServer),
+                // se sigue aplicando directo, sin red, exactamente igual que
+                // antes de este fix (mismo resultado, mismo mensaje, mismo
+                // "_pendingStyle" resuelto en el momento de la colocacion).
+                if (ConnectionManager.Instance != null && ConnectionManager.Instance.IsServer)
                 {
-                    case PortalManager.RegisterResult.Success:
-                        PortalHud.ShowActiveMessage(_pendingPlayer, tag);
-                        break;
-                    case PortalManager.RegisterResult.SuccessOrphan:
-                        PortalHud.ShowOrphanMessage(_pendingPlayer, tag);
-                        break;
-                    case PortalManager.RegisterResult.TagFull:
-                        // Regla 5: no permitir un tercer portal con el mismo tag.
-                        PortalHud.ShowTagInUseMessage(_pendingPlayer);
-                        return; // No cerrar la ventana: dejar que el jugador corrija el tag.
-                    case PortalManager.RegisterResult.EmptyTag:
-                        PortalHud.ShowEmptyTagMessage(_pendingPlayer);
-                        return;
+                    var result = _pendingMode == Mode.NewPortal
+                        ? PortalManager.Instance.RegisterPortal(_pendingPlayer, tag, _pendingBlockPos, _pendingStyle)
+                        : PortalManager.Instance.RenamePortal(_pendingPlayer, _pendingBlockPos, tag);
+
+                    ApplyResult(_pendingPlayer, result, tag, _pendingMode == Mode.Rename);
+                    return;
                 }
 
-                if (_pendingMode == Mode.Rename && result != PortalManager.RegisterResult.TagFull)
-                {
-                    PortalHud.ShowRenamedMessage(_pendingPlayer, tag);
-                }
-
-                CloseWindow();
+                // Cliente remoto: la validacion/registro real tiene que
+                // pasar por el servidor. Se manda la solicitud y se espera
+                // la respuesta (NetPackagePortalRequestResult ->
+                // HandleServerResult, mas abajo) antes de mostrar cualquier
+                // mensaje o cerrar la ventana — nunca se asume exito de
+                // forma optimista.
+                var package = NetPackageManager.GetPackage<NetPackagePortalRequest>().Setup(tag, _pendingBlockPos);
+                ConnectionManager.Instance.SendToServer(package);
             }
             catch (Exception e)
             {
                 API.LogError($"Excepcion en XUiPortalTag.Confirm(): {e}");
             }
+        }
+
+        /// <summary>
+        /// Respuesta ya resuelta (local en el servidor, o recibida por red
+        /// en un cliente remoto — ver HandleServerResult) para un intento de
+        /// nombrar/renombrar: mismo mensaje de HUD y misma decision de
+        /// cerrar o no la ventana que el codigo tenia antes del fix de
+        /// sincronizacion por red (ver comentario de clase).
+        /// </summary>
+        private void ApplyResult(EntityPlayer player, PortalManager.RegisterResult result, string tag, bool wasRename)
+        {
+            if (!ShowResultMessage(player, result, tag, wasRename))
+            {
+                // Regla 5 (TagFull) o tag vacio: no cerrar la ventana, dejar
+                // que el jugador corrija el tag.
+                return;
+            }
+
+            CloseWindow();
+        }
+
+        /// <summary>
+        /// Invocado desde NetPackagePortalRequestResult.ProcessPackage
+        /// (cliente remoto, ver PortalNetSync.cs) cuando llega la respuesta
+        /// real del servidor a un NetPackagePortalRequest mandado desde
+        /// Confirm(). Estatico y sin depender de la instancia de
+        /// XUiPortalTag que abrio la ventana originalmente (podria ya no
+        /// existir/haberse recreado) — resuelve el jugador local y su XUi
+        /// de nuevo, mismo patron que OpenWindow.
+        /// </summary>
+        internal static void HandleServerResult(PortalManager.RegisterResult result, string tag, bool wasRename)
+        {
+            var localPlayer = GameManager.Instance != null && GameManager.Instance.World != null
+                ? GameManager.Instance.World.GetPrimaryPlayer()
+                : null;
+
+            if (localPlayer == null)
+            {
+                return;
+            }
+
+            if (!ShowResultMessage(localPlayer, result, tag, wasRename))
+            {
+                return;
+            }
+
+            var xui = (localPlayer as EntityPlayerLocal)?.PlayerUI?.xui;
+            xui?.playerUI?.windowManager?.Close(WindowName);
+        }
+
+        /// <summary>
+        /// Muestra el mensaje de HUD correspondiente a "result" (mismo
+        /// switch que tenia Confirm() antes de este fix). Devuelve true si
+        /// la ventana debe cerrarse (exito, huerfano, o el mensaje extra de
+        /// "renombrado"), false si debe quedar abierta para que el jugador
+        /// corrija el tag (TagFull/EmptyTag).
+        /// </summary>
+        private static bool ShowResultMessage(EntityPlayer player, PortalManager.RegisterResult result, string tag, bool wasRename)
+        {
+            switch (result)
+            {
+                case PortalManager.RegisterResult.Success:
+                    PortalHud.ShowActiveMessage(player, tag);
+                    break;
+                case PortalManager.RegisterResult.SuccessOrphan:
+                    PortalHud.ShowOrphanMessage(player, tag);
+                    break;
+                case PortalManager.RegisterResult.TagFull:
+                    // Regla 5: no permitir un tercer portal con el mismo tag.
+                    PortalHud.ShowTagInUseMessage(player);
+                    return false;
+                case PortalManager.RegisterResult.EmptyTag:
+                    PortalHud.ShowEmptyTagMessage(player);
+                    return false;
+            }
+
+            if (wasRename)
+            {
+                PortalHud.ShowRenamedMessage(player, tag);
+            }
+
+            return true;
         }
 
         // Invocado desde el boton "cancelButton" via el OnPressed conectado en WireButtons().

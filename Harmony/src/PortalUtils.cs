@@ -14,61 +14,62 @@ namespace PortalMod
     internal static class PortalIdentity
     {
         // FIX real (Bug reportado — "pierdo la propiedad de mis portales cada
-        // vez que me desconecto, tengo que destruirlos y volver a colocarlos"):
-        // el fallback original (entityId.ToString(), ver HISTORIAL mas abajo)
-        // es exactamente la causa. entityId NO es estable entre reconexiones —
-        // el mismo jugador fisico recibe un entityId distinto cada vez que se
+        // vez que me desconecto, tengo que destruirlos y volver a colocarlos",
+        // y en servidores dedicados "los portales se pierden al reconectarse"):
+        // el fallback (entityId.ToString(), ver TRADEOFF mas abajo) es
+        // exactamente la causa. entityId NO es estable entre reconexiones — el
+        // mismo jugador fisico recibe un entityId distinto cada vez que se
         // conecta, y PortalManager usa ese valor como parte de la clave bajo la
         // que estan registrados sus portales (ver GetPortalKey). Al
         // reconectarse, el jugador resuelve una ownerKey nueva que nunca
         // coincide con la que quedo guardada en portals.dat — sus portales
         // siguen ahi (el bloque fisico existe) pero quedan huerfanos/
         // inaccesibles para el, indistinguible en el juego de "perdi la
-        // propiedad". Destruir y volver a colocar el bloque los re-registra
-        // bajo el entityId de la sesion actual, lo cual "arregla" el sintoma
-        // hasta la proxima desconexion — exactamente el comportamiento
-        // reportado.
+        // propiedad".
         //
-        // FIX: antes de caer al entityId inestable, se intenta resolver por
-        // reflection un identificador de plataforma real (Steam64 id, EOS id,
-        // o similar) expuesto en la jerarquia de EntityPlayer — el mismo
-        // patron ya usado en PortalParty.TryGetPartyId (candidatos de nombre
-        // probados en runtime, nunca una referencia directa a un tipo/miembro
-        // sin confirmar, para no arriesgar un error de COMPILACION si el
-        // candidato no existe en el Assembly-CSharp.dll real de V3.0). Si
-        // NINGUN candidato resuelve (por ejemplo si el sistema de identidad de
-        // V3.0 usa un nombre distinto a todos los probados), se sigue cayendo
-        // al fallback anterior — mismo comportamiento que antes de este fix,
-        // nunca peor.
+        // CONFIRMADO CONTRA Assembly-CSharp.dll REAL (analisis de causa raiz,
+        // ver TESTING.md): la version anterior de este archivo buscaba un
+        // identificador de plataforma estable como propiedad/campo DIRECTO de
+        // EntityPlayer (candidatos "PlatformUserIdentifierAbs", "PlatformId",
+        // "CrossplatformId", "UserIdentifier", "SteamId", "steamID"). Se
+        // inspecciono la jerarquia real de EntityPlayer/EntityPlayerLocal/
+        // EntityAlive/Entity en el DLL instalado: NINGUNO de esos candidatos
+        // (ni ningun otro miembro relacionado con identidad de plataforma)
+        // existe ahi — la busqueda entera apuntaba al objeto EQUIVOCADO.
         //
-        // HISTORIAL: el intento original de esta clase referenciaba
-        // "player.PlatformUserIdentifierAbs" directo — ese miembro NO existe en
-        // EntityPlayer del Assembly-CSharp.dll real de V3.0 (error de
-        // compilacion confirmado). No se tuvo acceso al DLL en esa sesion para
-        // confirmar el reemplazo correcto, asi que se opto por el fallback
-        // entityId.ToString(), garantizado a compilar — sin notar en ese
-        // momento el impacto en persistencia entre sesiones que documenta el
-        // TRADEOFF de mas abajo. Este fix ataca esa causa raiz directamente.
-        private static readonly string[] StableIdPropertyCandidates =
-        {
-            "PlatformUserIdentifierAbs", "PlatformId", "CrossplatformId", "UserIdentifier", "SteamId", "steamID"
-        };
-
-        // Candidatos de nombre de miembro DENTRO del objeto devuelto por la
-        // propiedad/campo de arriba (si ese valor no es ya un tipo simple como
-        // string/long) que contendria el identificador unico real como texto —
-        // mismo patron que PortalParty.PartyIdMemberCandidates.
-        private static readonly string[] StableIdMemberCandidates =
-        {
-            "CombinedString", "ReadablePlatformUserId", "ReadableString", "InternalId", "Id", "id"
-        };
-
-        // Que propiedad/campo (si alguno) existe en un Type dado no cambia en
-        // caliente — se resuelve una unica vez por Type y se reusa (null
-        // cacheado = "ningun candidato existe en este Type", tambien valido
-        // para no volver a escanear la jerarquia en cada llamada). Mismo
-        // patron/motivo que PortalParty._instancePropertyCache.
-        private static readonly Dictionary<Type, MemberInfo> _stableIdMemberCache = new Dictionary<Type, MemberInfo>();
+        // El dato real vive en un objeto COMPLETAMENTE DISTINTO, "ClientInfo"
+        // (uno por conexion de red activa, mantenido por ConnectionManager —
+        // el mismo objeto que el juego ya usa internamente para
+        // autenticacion/anti-cheat/networking):
+        //   ConnectionManager.Instance.Clients.ForEntityId(int entityId)
+        //     -> ClientInfo (null si no hay conexion de red para ese entityId)
+        //   ClientInfo.CrossplatformId / ClientInfo.PlatformId
+        //     -> PlatformUserIdentifierAbs (puede ser null)
+        //   PlatformUserIdentifierAbs.CombinedString -> string real y estable
+        // Se prefiere CrossplatformId (el ID unificado del sistema de
+        // crossplay EOS de V3.0, igual sin importar la plataforma nativa) y
+        // se cae a PlatformId si el primero no resuelve (por ejemplo un
+        // servidor Steam-only sin crossplay habilitado).
+        //
+        // Como la busqueda original NUNCA miraba en el lugar correcto, este
+        // mecanismo jamas resolvia nada, ni una sola vez, para ningun
+        // jugador — TODO steamId terminaba siendo SIEMPRE
+        // entityId.ToString(), inestable entre reconexiones. Esto explica el
+        // bug reportado de forma COMPLETA: no es un caso raro sin cubrir, es
+        // que el fix nunca funciono en absoluto desde que se agrego.
+        //
+        // "ClientInfo" solo existe para conexiones de red reales (dedicado, o
+        // el propio host jugando en un mundo con red activa) — en un mundo
+        // verdaderamente offline/singleplayer sin ConnectionManager activo
+        // puede no haber entrada para el jugador local, por eso se preserva
+        // el fallback a entityId.ToString() (ver TRADEOFF), ahora solo
+        // alcanzado en ese caso realmente sin red, no en todo multiplayer
+        // como pasaba antes.
+        //
+        // Ya no hace falta ninguna capa de reflection (ni sus caches de
+        // Type/MemberInfo): con los miembros reales confirmados se llama
+        // directo, mas simple y sin el costo de reflection en un metodo que
+        // corre SIN throttle en cada frame por jugador.
 
         // Una vez resuelto con exito un identificador estable para un
         // entityId dado, se cachea para el resto de la sesion de ese jugador:
@@ -158,47 +159,25 @@ namespace PortalMod
         }
 
         /// <summary>
-        /// Intenta resolver por reflection un identificador de plataforma
-        /// estable (Steam64/EOS/etc.) para este jugador — ver comentario
-        /// extenso de la clase sobre por que reflection y no una referencia
-        /// directa. Devuelve null si ningun candidato de nombre existe en esta
-        /// version del juego, o si existe pero su valor no se pudo interpretar
-        /// como un identificador simple; ambos casos son best-effort, nunca
-        /// deben tumbar el resto del mod.
+        /// Resuelve el identificador de plataforma estable (Steam64/EOS) del
+        /// jugador via ConnectionManager.Instance.Clients — ver comentario
+        /// extenso de la clase sobre por que este es el camino real (y por
+        /// que buscarlo en EntityPlayer, como hacia la version anterior,
+        /// nunca podia funcionar). Devuelve null si no hay una conexion de
+        /// red activa para este entityId (por ejemplo, mundo offline real)
+        /// o si ninguno de los dos identificadores resuelve — ambos casos
+        /// son best-effort, nunca deben tumbar el resto del mod.
         /// </summary>
         private static string TryResolveStablePlatformId(EntityPlayer player)
         {
             try
             {
-                var playerType = player.GetType();
-                if (!_stableIdMemberCache.TryGetValue(playerType, out var member))
-                {
-                    // SafeFindStableIdMemberInHierarchy (no FindStableIdMemberInHierarchy
-                    // directo): GetSteamId se llama SIN throttle en cada frame por
-                    // jugador (ver comentario de _resolvedStableIdByEntityId arriba).
-                    // Si el escaneo de la jerarquia lanzara AmbiguousMatchException
-                    // (posible si una clase derivada oculta una propiedad del mismo
-                    // nombre con una firma distinta) y esa excepcion escapara hasta
-                    // ACA, la linea de abajo que cachea el resultado nunca se
-                    // ejecutaria — el proximo frame repetiria el mismo escaneo, la
-                    // misma excepcion, y el mismo log de warning del catch exterior,
-                    // por siempre. Se garantiza que este Type SIEMPRE quede cacheado
-                    // (con un miembro real o con null) despues del primer intento,
-                    // sin importar el resultado.
-                    member = SafeFindStableIdMemberInHierarchy(playerType);
-                    _stableIdMemberCache[playerType] = member;
-                }
+                var connectionManager = ConnectionManager.Instance;
+                var clientInfo = connectionManager != null
+                    ? connectionManager.Clients?.ForEntityId(player.entityId)
+                    : null;
 
-                if (member == null)
-                {
-                    return null;
-                }
-
-                var rawValue = member is PropertyInfo propInfo
-                    ? propInfo.GetValue(player)
-                    : ((FieldInfo)member).GetValue(player);
-
-                if (rawValue == null)
+                if (clientInfo == null)
                 {
                     return null;
                 }
@@ -208,98 +187,19 @@ namespace PortalMod
                 // (fallback) o de un ID de party ("party:", ver
                 // PortalManager.PartyKeyPrefix) — nunca colisiona con ninguno
                 // de los dos formatos anteriores.
-                if (IsSimpleIdType(rawValue))
-                {
-                    var text = rawValue.ToString();
-                    return string.IsNullOrWhiteSpace(text) ? null : "plat:" + text;
-                }
+                var platformId = clientInfo.CrossplatformId ?? clientInfo.PlatformId;
+                var combined = platformId?.CombinedString;
 
-                var nested = ExtractNestedId(rawValue);
-                return nested != null ? "plat:" + nested : null;
+                return string.IsNullOrWhiteSpace(combined) ? null : "plat:" + combined;
             }
             catch (Exception e)
             {
                 // Puramente best-effort: un fallo aca NUNCA debe impedir que el
                 // resto del mod funcione, solo degrada al fallback de entityId
                 // (mismo comportamiento que antes de este fix).
-                API.LogWarning($"PortalIdentity: fallo resolviendo id de plataforma estable por reflection ({e.Message}); se usa entityId como fallback.");
+                API.LogWarning($"PortalIdentity: fallo resolviendo id de plataforma estable ({e.Message}); se usa entityId como fallback.");
                 return null;
             }
-        }
-
-        private static MemberInfo SafeFindStableIdMemberInHierarchy(Type startType)
-        {
-            try
-            {
-                return FindStableIdMemberInHierarchy(startType);
-            }
-            catch (AmbiguousMatchException)
-            {
-                // Type.GetProperty(string, BindingFlags) lanza esto si una clase
-                // derivada oculta ("new") una propiedad del mismo nombre heredada
-                // con una firma distinta — candidato ambiguo, se descarta (null =
-                // "ningun candidato usable en este Type", cacheado igual que un
-                // candidato inexistente).
-                return null;
-            }
-        }
-
-        private static MemberInfo FindStableIdMemberInHierarchy(Type startType)
-        {
-            for (var t = startType; t != null; t = t.BaseType)
-            {
-                foreach (var name in StableIdPropertyCandidates)
-                {
-                    var prop = t.GetProperty(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                    if (prop != null && prop.GetIndexParameters().Length == 0)
-                    {
-                        return prop;
-                    }
-
-                    var field = t.GetField(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                    if (field != null)
-                    {
-                        return field;
-                    }
-                }
-            }
-
-            return null;
-        }
-
-        private static string ExtractNestedId(object value)
-        {
-            var valueType = value.GetType();
-
-            foreach (var memberName in StableIdMemberCandidates)
-            {
-                var prop = valueType.GetProperty(memberName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (prop != null)
-                {
-                    var nestedValue = prop.GetValue(value);
-                    if (nestedValue != null && !string.IsNullOrWhiteSpace(nestedValue.ToString()))
-                    {
-                        return nestedValue.ToString();
-                    }
-                }
-
-                var field = valueType.GetField(memberName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (field != null)
-                {
-                    var nestedValue = field.GetValue(value);
-                    if (nestedValue != null && !string.IsNullOrWhiteSpace(nestedValue.ToString()))
-                    {
-                        return nestedValue.ToString();
-                    }
-                }
-            }
-
-            return null;
-        }
-
-        private static bool IsSimpleIdType(object value)
-        {
-            return value is string || value is int || value is long || value is Guid;
         }
     }
 

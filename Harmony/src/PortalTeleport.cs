@@ -165,6 +165,32 @@ namespace PortalMod
             // ya tiene try/catch propio.
             PortalManager.Instance.MaybeAutoSave();
 
+            // FIX real (causa raiz 3, ver TESTING.md seccion 12.3 y 13): todo
+            // lo de aca abajo (completar teletransportes pendientes + el
+            // chequeo de colision jugador<->portal que decide si alguien se
+            // teletransporta) es autoridad EXCLUSIVA del servidor —
+            // ConnectionManager.Instance.IsServer es true en servidor
+            // dedicado, en el host de un listen server, Y en singleplayer
+            // puro (que internamente sigue siendo "un servidor sin
+            // clientes", confirmado por reflection contra el DLL real:
+            // ConnectionManager.IsSinglePlayer == IsServer && ClientCount()
+            // == 0), y false SOLO en un cliente remoto puro. Antes de este
+            // fix, un cliente remoto ejecutaba esta MISMA logica con su
+            // propia copia LOCAL (y desincronizada) de PortalManager,
+            // moviendo al jugador con SetPosition sin que el servidor real
+            // lo aprobara — el sintoma reportado de "el teletransporte
+            // funciona un par de veces y despues deja de funcionar" (el
+            // servidor termina revirtiendo/ignorando una posicion que el
+            // nunca aprobo). Ahora que el registro de portales SI se
+            // sincroniza con el servidor (ver PortalNetSync.cs), la unica
+            // autoridad real para decidir "esto teletransporta" tiene que
+            // seguir siendo el servidor — un cliente jamas debe mover a
+            // nadie por su cuenta.
+            if (ConnectionManager.Instance == null || !ConnectionManager.Instance.IsServer)
+            {
+                return;
+            }
+
             try
             {
                 // Completa los teletransportes que quedaron esperando a que

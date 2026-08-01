@@ -383,6 +383,21 @@ namespace PortalMod
                     return;
                 }
 
+                // FIX real de causa raiz 3 (ver PortalNetSync.cs / TESTING.md
+                // seccion 12.3/13): igual que la colocacion, la destruccion
+                // de un bloque tambien corre client-side (prediccion) ademas
+                // de en el servidor. Desregistrar solo tiene sentido del
+                // lado servidor — ese es el UNICO PortalManager autoritativo,
+                // y es el que despues avisa a todos los clientes conectados
+                // (ver UnregisterPortal -> PortalNetSync.BroadcastFullSyncIfServer).
+                // Un cliente remoto que ejecuta este mismo Postfix por
+                // prediccion simplemente no hace nada aca — se entera de la
+                // baja real por ese broadcast.
+                if (ConnectionManager.Instance == null || !ConnectionManager.Instance.IsServer)
+                {
+                    return;
+                }
+
                 var blockPos = _bvRef.ToBlockPos(_world);
 
                 if (PortalManager.Instance.TryGetPortalRef(blockPos, out var portalRef))

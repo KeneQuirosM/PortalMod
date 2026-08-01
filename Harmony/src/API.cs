@@ -101,11 +101,31 @@ namespace PortalMod
             PortalManager.Instance.Load();
         }
 
-        // Se usa unicamente para logging de depuracion; el registro real de
-        // portales ocurre en PortalBlockPatch.cs cuando se coloca el bloque.
+        // El registro real de portales ocurre en PortalBlockPatch.cs cuando
+        // se coloca el bloque (o via NetPackagePortalRequest en un cliente
+        // remoto, ver PortalNetSync.cs).
         private void OnPlayerSpawnedInWorld(ref ModEvents.SPlayerSpawnedInWorldData _data)
         {
             Log($"Jugador conectado. RespawnType={_data.RespawnType}");
+
+            // FIX real de causa raiz 3 (ver PortalNetSync.cs / TESTING.md
+            // seccion 12.3/13): el PortalManager de un cliente recien
+            // conectado arranca vacio (ya no carga su propio portals.dat
+            // local, ver PortalManager.Load) — el servidor le manda el
+            // registro completo apenas su jugador aparece en el mundo, para
+            // que pueda decidir correctamente que ventana mostrar con la
+            // tecla E (nombrar vs renombrar) y el tooltip de PortalHoverFX
+            // desde el primer momento. "_data.ClientInfo" viene directo del
+            // evento (confirmado por decompilacion, ver TESTING.md 13.1) —
+            // sin necesidad de resolverlo de nuevo via
+            // ConnectionManager.Instance.Clients.ForEntityId. Es null para
+            // un jugador sin conexion de red real (singleplayer puro), caso
+            // en el que no hace falta mandar nada (mismo proceso, mismo
+            // PortalManager.Instance).
+            if (ConnectionManager.Instance != null && ConnectionManager.Instance.IsServer && _data.ClientInfo != null)
+            {
+                PortalNetSync.SendFullSyncToClient(_data.ClientInfo);
+            }
         }
 
         internal static void Log(string message)

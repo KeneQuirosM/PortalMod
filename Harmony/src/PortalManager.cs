@@ -173,6 +173,33 @@ namespace PortalMod
             EmptyTag
         }
 
+        /// <summary>
+        /// Fila plana de un portal para sincronizar por red (ver
+        /// PortalNetSync.cs / NetPackagePortalSync, y TESTING.md seccion
+        /// 12.3/13 sobre la causa raiz que esto corrige): "_portals" es un
+        /// diccionario anidado ownerKey-&gt;tag-&gt;lista de posiciones, mas
+        /// "_biomes"/"_styles" indexados por posicion aparte — esta fila
+        /// aplana esa combinacion a un unico registro autocontenido, facil
+        /// de serializar y de aplicar de vuelta.
+        /// </summary>
+        public readonly struct PortalSyncEntry
+        {
+            public readonly string OwnerKey;
+            public readonly string Tag;
+            public readonly Vector3i Pos;
+            public readonly string Biome;
+            public readonly string Style;
+
+            public PortalSyncEntry(string ownerKey, string tag, Vector3i pos, string biome, string style)
+            {
+                OwnerKey = ownerKey;
+                Tag = tag;
+                Pos = pos;
+                Biome = biome;
+                Style = style;
+            }
+        }
+
         /// <summary>Resultado de verificar si hay un portalBlock real en una posicion — ver CheckPortalBlockAt.</summary>
         private enum PortalBlockCheck
         {
@@ -410,6 +437,17 @@ namespace PortalMod
                 {
                     _dirty = true;
                     API.Log($"[PortalMod] Migrando {migratedCount} portales de {fromKey} a {toKey}");
+
+                    // FIX real de causa raiz 3 (ver PortalNetSync.cs /
+                    // TESTING.md seccion 12.3/13): si esto cambio algo real,
+                    // los clientes conectados tienen que enterarse de la
+                    // nueva asociacion ownerKey (por ejemplo, un companero
+                    // que recien se sumo a una party ahora puede usar
+                    // portales que antes no veia). No-op si esto no corre en
+                    // el servidor. "lock" es reentrante por hilo (mismo
+                    // patron ya establecido en esta clase), asi que llamar
+                    // esto todavia adentro del lock es seguro.
+                    PortalNetSync.BroadcastFullSyncIfServer();
                 }
             }
         }
@@ -741,6 +779,11 @@ namespace PortalMod
                         PortalVisualFX.RefreshBlockState(p, linked: true);
                     }
 
+                    // FIX real de causa raiz 3 (ver PortalNetSync.cs /
+                    // TESTING.md seccion 12.3/13): avisar a todos los
+                    // clientes conectados del nuevo registro — no-op si esto
+                    // no corre en el servidor.
+                    PortalNetSync.BroadcastFullSyncIfServer();
                     return RegisterResult.Success;
                 }
 
@@ -748,6 +791,7 @@ namespace PortalMod
                 // (relevante sobre todo al renombrar, donde el bloque pudo venir de
                 // un estado activo previo).
                 PortalVisualFX.RefreshBlockState(pos, linked: false);
+                PortalNetSync.BroadcastFullSyncIfServer();
                 return RegisterResult.SuccessOrphan;
             }
         }
@@ -821,6 +865,11 @@ namespace PortalMod
                 _dirty = true;
 
                 API.Log($"Portal eliminado: ownerKey={portalRef.OwnerKey} tag='{portalRef.Tag}' pos={pos}");
+
+                // FIX real de causa raiz 3 (ver PortalNetSync.cs / TESTING.md
+                // seccion 12.3/13): avisar a todos los clientes conectados
+                // de la baja — no-op si esto no corre en el servidor.
+                PortalNetSync.BroadcastFullSyncIfServer();
                 return true;
             }
         }
@@ -1070,6 +1119,20 @@ namespace PortalMod
         /// </summary>
         public void Save()
         {
+            // FIX real de causa raiz 3 (ver TESTING.md seccion 12.3/13): en
+            // un cliente remoto puro, "_portals" es solo un espejo recibido
+            // por red (ver ApplyFullSync) — nunca la fuente de verdad.
+            // Guardarlo a disco ahi ya no tiene sentido (ese archivo local
+            // no es el que el servidor realmente lee) y solo persistiria un
+            // snapshot potencialmente viejo. Solo el servidor (dedicado,
+            // host de listen server, o singleplayer — los tres casos donde
+            // ConnectionManager.Instance.IsServer es true, ver PortalTeleport.
+            // Tick para el mismo chequeo) guarda de verdad.
+            if (ConnectionManager.Instance == null || !ConnectionManager.Instance.IsServer)
+            {
+                return;
+            }
+
             lock (_lock)
             {
                 if (!_dirty)
@@ -1161,6 +1224,21 @@ namespace PortalMod
 
         public void Load()
         {
+            // FIX real de causa raiz 3 (ver TESTING.md seccion 12.3/13): un
+            // cliente remoto puro ya no necesita (ni deberia) poblar su
+            // PortalManager desde SU PROPIO portals.dat local — recibe el
+            // estado real por red apenas su jugador aparece en el mundo
+            // (ver PortalNetSync.SendFullSyncToClient, API.cs
+            // OnPlayerSpawnedInWorld). Cargar de disco en un cliente remoto
+            // solo mostraria un snapshot potencialmente viejo/irrelevante
+            // (ese archivo ni siquiera es el mismo que el del servidor real
+            // en un servidor dedicado remoto) hasta que la sincronizacion
+            // real lo pise. Mismo chequeo que Save()/PortalTeleport.Tick.
+            if (ConnectionManager.Instance == null || !ConnectionManager.Instance.IsServer)
+            {
+                return;
+            }
+
             lock (_lock)
             {
             var path = GetSaveFilePath();
@@ -1405,6 +1483,112 @@ namespace PortalMod
             lock (_lock)
             {
                 return new List<Vector3i>(_positionLookup.Keys);
+            }
+        }
+
+        // ========================================================================
+        // SINCRONIZACION POR RED (ver PortalNetSync.cs) — FIX real de causa
+        // raiz 3 (TESTING.md seccion 12.3/13): "_portals" solo puede tener
+        // registros reales del lado del SERVIDOR (todo lo de arriba sigue
+        // funcionando exactamente igual ahi). Del lado de un CLIENTE remoto,
+        // "_portals" pasa a ser un espejo de solo-recepcion: se reemplaza
+        // por completo con lo que el servidor mande (ApplyFullSync), nunca
+        // se muta localmente por otro camino — sigue sirviendo para las
+        // mismas lecturas de siempre (que ventana abrir con la tecla E,
+        // tooltip de PortalHoverFX), pero la fuente de verdad para decidir
+        // si alguien se teletransporta es SIEMPRE PortalManager.Instance
+        // DEL SERVIDOR (ver el gate en PortalTeleport.Tick).
+        // ========================================================================
+
+        /// <summary>
+        /// Aplana el registro completo actual (ownerKey/tag/posicion +
+        /// bioma/estilo) para mandarlo por red — usado tanto para el
+        /// snapshot inicial al conectarse un jugador
+        /// (PortalNetSync.SendFullSyncToClient) como para el broadcast tras
+        /// cualquier cambio real (PortalNetSync.BroadcastFullSyncIfServer).
+        /// Llamado unicamente del lado servidor (ver esos dos metodos), pero
+        /// no depende de eso para funcionar correctamente — simplemente lee
+        /// lo que haya en memoria en el momento de llamarlo.
+        /// </summary>
+        internal List<PortalSyncEntry> GetSyncSnapshot()
+        {
+            lock (_lock)
+            {
+                var result = new List<PortalSyncEntry>();
+
+                foreach (var ownerEntry in _portals)
+                {
+                    foreach (var tagEntry in ownerEntry.Value)
+                    {
+                        foreach (var pos in tagEntry.Value)
+                        {
+                            _biomes.TryGetValue(pos, out var biome);
+                            _styles.TryGetValue(pos, out var style);
+                            result.Add(new PortalSyncEntry(ownerEntry.Key, tagEntry.Key, pos, biome, style));
+                        }
+                    }
+                }
+
+                return result;
+            }
+        }
+
+        /// <summary>
+        /// Reemplaza POR COMPLETO el registro en memoria con lo recibido del
+        /// servidor (nunca una fusion/merge — un snapshot completo siempre
+        /// gana sobre lo que hubiera antes, evitando que un cliente arrastre
+        /// una entrada vieja que el servidor ya no tiene, por ejemplo un
+        /// portal destruido mientras este cliente estaba desconectado).
+        /// Deliberadamente NO toca "_cooldowns"/"_originalOwnerSteamId"/
+        /// "_lastKnownPortalKey"/"_pendingPartyKey" (estado de sesion local
+        /// que ya no se usa del lado cliente — ver gate de
+        /// CheckPartyMembershipChanged en PortalTeleport.Tick) ni marca
+        /// "_dirty" (esto no es un cambio local que haya que persistir —
+        /// Save() ya esta gateado a servidor solamente, ver Save()).
+        /// </summary>
+        internal void ApplyFullSync(List<PortalSyncEntry> entries)
+        {
+            lock (_lock)
+            {
+                _portals.Clear();
+                _positionLookup.Clear();
+                _biomes.Clear();
+                _styles.Clear();
+
+                if (entries == null)
+                {
+                    return;
+                }
+
+                foreach (var entry in entries)
+                {
+                    if (!_portals.TryGetValue(entry.OwnerKey, out var tagMap))
+                    {
+                        tagMap = new Dictionary<string, List<Vector3i>>();
+                        _portals[entry.OwnerKey] = tagMap;
+                    }
+
+                    if (!tagMap.TryGetValue(entry.Tag, out var positions))
+                    {
+                        positions = new List<Vector3i>();
+                        tagMap[entry.Tag] = positions;
+                    }
+
+                    positions.Add(entry.Pos);
+                    _positionLookup[entry.Pos] = new PortalRef(entry.OwnerKey, entry.Tag);
+
+                    if (!string.IsNullOrEmpty(entry.Biome))
+                    {
+                        _biomes[entry.Pos] = entry.Biome;
+                    }
+
+                    if (!string.IsNullOrEmpty(entry.Style))
+                    {
+                        _styles[entry.Pos] = entry.Style;
+                    }
+                }
+
+                API.Log($"[PortalMod] PortalManager: sincronizacion recibida del servidor aplicada ({entries.Count} posiciones).");
             }
         }
     }
