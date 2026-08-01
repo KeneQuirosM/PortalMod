@@ -9,8 +9,8 @@ namespace PortalMod
     /// "BlockValue.rotation" (ya usado, sin re-asignar, por PortalVisualFX.cs
     /// — ver "newBv.rotation = currentBv.rotation" ahi), y de vuelta a un
     /// vector de mundo ("hacia donde da el frente del portal") para calcular
-    /// el punto de salida (PortalTeleport.FindLandingBlockPos) y el
-    /// indicador visual (PortalExitIndicator).
+    /// el punto de salida (PortalTeleport.FindLandingBlockPos) y la flecha
+    /// del ghost de colocacion (PortalPlacementGhost).
     ///
     /// ADVERTENCIA DE CONFIANZA (mismo espiritu que el resto del mod, ver
     /// comentarios "TODO: verificar en Assembly-CSharp V3.0..." en otros
@@ -24,10 +24,10 @@ namespace PortalMod
     /// cual garantiza que el portal siempre rota junto con el jugador que lo
     /// coloca sin importar si esta convencion coincide con la real del motor
     /// — lo unico que puede quedar desalineado si NO coincide es el sentido
-    /// visual exacto (por ejemplo que el indicador de salida/el aterrizaje
-    /// "al frente" terminen mirando 90/180 grados distinto de lo que el
-    /// modelo 3D muestra visualmente). Si al probar en el juego real el
-    /// indicador/aterrizaje no coincide con el frente visual del modelo, el
+    /// visual exacto (por ejemplo que la flecha del ghost de colocacion/el
+    /// aterrizaje "al frente" terminen mirando 90/180 grados distinto de lo
+    /// que el modelo 3D muestra visualmente). Si al probar en el juego real
+    /// la flecha/aterrizaje no coincide con el frente visual del modelo, el
     /// arreglo es unicamente ACA: ajustar el orden Norte/Este/Sur/Oeste (o
     /// el signo) de "ForwardOffset"/"ToQuaternion" — ver TESTING.md seccion
     /// "Feature 2" para el procedimiento de calibracion.
@@ -87,8 +87,8 @@ namespace PortalMod
         /// <summary>
         /// Desplazamiento de UN bloque en la direccion "frente" del portal
         /// para esta rotacion — usado tanto para el punto de aterrizaje
-        /// (PortalTeleport.FindLandingBlockPos) como para posicionar el
-        /// indicador de salida (PortalExitIndicator).
+        /// (PortalTeleport.FindLandingBlockPos) como para orientar la
+        /// flecha del ghost de colocacion (PortalPlacementGhost).
         /// </summary>
         public static Vector3i ForwardOffset(byte rotation)
         {

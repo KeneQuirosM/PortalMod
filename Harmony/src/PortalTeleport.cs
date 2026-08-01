@@ -591,19 +591,6 @@ namespace PortalMod
         // de recuperacion) para elegir un Y que el juego vaya a aceptar tal
         // cual, en vez de adivinar una condicion de "pasable" propia.
         //
-        // FIX real (Bug: "1 bloque adelante" del intento anterior podia
-        // terminar DENTRO de una pared — "adelante" depende de la rotacion
-        // del portal y del layout real del cuarto, ninguno de los dos
-        // garantiza que esa celda especifica este libre): se vuelve a la
-        // posicion XZ EXACTA del portal — el jugador debe aparecer siempre
-        // dentro del propio marco del portal (el "footprint"), nunca
-        // desplazado a un costado. Solo se ajusta la celda Y:
-        //   1) Primero se prueba EN o apenas ARRIBA de la Y del portal (0,
-        //      +1, +2) — cubre el caso normal (portal libre) y el caso de
-        //      un piso/objeto que invadio la celda inferior del marco.
-        //   2) Si nada de eso pasa CanPlayersSpawnAtPos (techo demasiado
-        //      bajo justo arriba del portal), se escanea DESCENDENTE desde
-        //      la Y del portal para encontrar el piso real.
         // En ambos pasos se usa CanPlayersSpawnAtPos — la MISMA API real que
         // usa el rescate interno del juego (PlayerMoveController.
         // updateRespawn, ver comentario mas arriba) — para garantizar que la
@@ -612,23 +599,48 @@ namespace PortalMod
         // arriba de ExecuteTeleport, se revirtio a SetPosition especificamente
         // para evitar ese rescate), sigue siendo la forma correcta de
         // confirmar "el jugador realmente puede pararse aca" sin adivinar.
-        // FEATURE 2 ("el punto de salida debe estar al frente del portal, no
-        // adentro del bloque"): antes de este cambio el aterrizaje SIEMPRE
-        // usaba la columna XZ exacta del portal (ver todo el historial de
-        // bugs documentado arriba sobre por que — sin rotacion real,
-        // "adelante" no era confiable, ver PortalOrientation). Ahora que
-        // portalBlock respeta la rotacion del jugador al colocarse, se puede
-        // calcular con confianza la celda "al frente" (lado opuesto al que
-        // se entra) y probarla PRIMERO — relevante en particular para
-        // estilos no planos (ej. "cylinder", ver blocks.xml) donde aparecer
-        // adentro del propio marco puede dejar al jugador chocando/
-        // incrustado contra el modelo al salir. Se prueba la celda al
-        // frente SOLO si su chunk esta cargado y pasa
-        // World.CanPlayersSpawnAtPos (nunca se asume "libre" a ciegas, mismo
-        // criterio que el resto de este metodo) — si cualquiera de las dos
-        // falla, se cae al comportamiento ORIGINAL (adentro del marco, ver
-        // "TryFindSpawnableColumn" mas abajo), nunca se deja al jugador sin
-        // aterrizar.
+        //
+        // FIX real (Bug reportado: "siempre salgo enterrado en la tierra o
+        // los bloques, y si salgo arriba es en techos"): el intento anterior
+        // probaba PRIMERO la celda "al frente" del portal con un escaneo
+        // propio (arriba 0..+2, y si eso fallaba, ABAJO hasta 32 bloques) y,
+        // si esa columna entera fallaba, repetia el MISMO escaneo (incluidos
+        // los 32 bloques hacia abajo) sobre la columna del propio marco
+        // ("adentro"). Dos problemas reales con eso:
+        //   1) portalPos es la celda INFERIOR del marco (MultiBlockDim=
+        //      "1,2,1", ver blocks.xml) — el propio portal YA ocupa dy=0 y
+        //      dy=1 de esa columna. En un cuarto tipico de 3 bloques de alto
+        //      (el mas comun en construcciones de jugador) solo queda dy=2
+        //      libre, que ademas necesita dy=3 tambien libre para la altura
+        //      del jugador (CanPlayersSpawnAtPos exige 2 celdas) — pero dy=3
+        //      ahi es el techo. O sea: la columna "adentro" (portalPos)
+        //      estructuralmente CASI NUNCA tiene espacio valido en un
+        //      interior comun — no es un caso raro, es la norma.
+        //   2) Como el escaneo "arriba" de esa columna fallaba siempre por
+        //      el punto 1, el codigo caia SIEMPRE en el escaneo de 32
+        //      bloques hacia ABAJO desde portalPos — es decir, cavaba hacia
+        //      el piso/cimiento/terreno debajo de la habitacion buscando
+        //      cualquier hueco, y aterrizaba al jugador literalmente
+        //      enterrado en tierra o roca en cuanto encontraba uno. Ese
+        //      mismo escaneo profundo tambien podia dispararse en la
+        //      columna "al frente" si esa celda daba contra una pared/
+        //      desnivel, explicando el caso inverso (aparecer arriba, en un
+        //      techo cercano sin relacion real con el portal).
+        // El fix real: en vez de "frente, y si falla adentro", se prueban
+        // las 4 celdas CARDINALES alrededor del marco (frente, derecha,
+        // atras, izquierda — reutilizando PortalOrientation.ForwardOffset
+        // con rotation+0/1/2/3, ya que esos 4 valores son exactamente los 4
+        // compass del mod) en ese orden de preferencia, cada una con un
+        // escaneo vertical ACOTADO cerca del piso (ver TryFindSpawnableColumn
+        // — ya no cava 32 bloques). Estas 4 celdas son las UNICAS que
+        // garantizan estar al nivel del piso real de la habitacion (a
+        // diferencia de "arriba del marco"), asi que casi siempre alguna
+        // esta libre (el jugador tuvo que pararse en al menos una para
+        // construir/activar el portal). Solo si las 4 fallan se cae a un
+        // ultimo recurso simple: pararse justo ENCIMA del marco (portalPos +
+        // 2), sin escanear mas — preferible aceptar un posible roce leve
+        // contra un techo bajo antes que enterrar al jugador o mandarlo a un
+        // techo lejano sin relacion con el portal.
         private static Vector3i FindLandingBlockPos(Vector3i portalPos, byte rotation)
         {
             var world = GameManager.Instance != null ? GameManager.Instance.World : null;
@@ -663,33 +675,39 @@ namespace PortalMod
                 return portalPos;
             }
 
-            var frontColumnBase = portalPos + PortalOrientation.ForwardOffset(rotation);
-            if (world.IsChunkAreaLoaded(frontColumnBase.x, frontColumnBase.y, frontColumnBase.z) &&
-                TryFindSpawnableColumn(world, frontColumnBase, out var frontLanding))
+            for (var side = 0; side < 4; side++)
             {
-                return frontLanding;
+                var offset = PortalOrientation.ForwardOffset((byte)((rotation + side) & 0x03));
+                var columnBase = portalPos + offset;
+
+                if (!world.IsChunkAreaLoaded(columnBase.x, columnBase.y, columnBase.z))
+                {
+                    continue;
+                }
+
+                if (TryFindSpawnableColumn(world, columnBase, out var landing))
+                {
+                    return landing;
+                }
             }
 
-            if (TryFindSpawnableColumn(world, portalPos, out var insideLanding))
-            {
-                return insideLanding;
-            }
-
-            // No se encontro espacio valido ni al frente ni adentro del
-            // marco: quedarse con la posicion original del portal en vez de
-            // arriesgarse a subir/bajar demasiado (mismo fallback final que
-            // antes de la Feature 2).
-            return portalPos;
+            // Los 4 costados fallaron: ultimo recurso, encima del propio
+            // marco (ver FIX real arriba de por que ya no se cava hacia
+            // abajo ni se cae de vuelta a portalPos sin modificar).
+            return portalPos + new Vector3i(0, 2, 0);
         }
 
         /// <summary>
         /// Escanea verticalmente desde "columnBase" (primero hacia arriba,
-        /// despues hacia abajo) buscando la primera celda que pase
-        /// World.CanPlayersSpawnAtPos — misma logica/limites que usaba
-        /// originalmente FindLandingBlockPos antes de la Feature 2, extraida
-        /// a su propio metodo para poder probarla tanto en la columna "al
-        /// frente" del portal como, de fallback, en la columna original
-        /// (adentro del marco).
+        /// despues un poco hacia abajo) buscando la primera celda que pase
+        /// World.CanPlayersSpawnAtPos. "columnBase" es siempre una celda
+        /// LATERAL al marco (una de las 4 cardinales, ver FindLandingBlockPos)
+        /// a la misma altura que el piso del portal, asi que dy=0 es
+        /// tipicamente el nivel de piso real de la habitacion — el escaneo
+        /// hacia abajo es deliberadamente CORTO (ver FIX real en
+        /// FindLandingBlockPos: un escaneo profundo cava hacia terreno/
+        /// cimientos sin relacion con el portal), solo para cubrir un
+        /// desnivel/escalon menor junto al marco.
         /// </summary>
         private static bool TryFindSpawnableColumn(World world, Vector3i columnBase, out Vector3i result)
         {
@@ -707,7 +725,7 @@ namespace PortalMod
                 }
             }
 
-            const int maxScanDown = 32;
+            const int maxScanDown = 3;
             for (var dy = -1; dy >= -maxScanDown; dy--)
             {
                 var candidate = columnBase + new Vector3i(0, dy, 0);

@@ -37,7 +37,14 @@ namespace PortalMod
     /// real de cada estilo (platform/grid/claws/cylinder/wings/arch) — ver
     /// README.md para el detalle completo de esta limitacion y como
     /// mejorarla mas adelante si se confirma la API real de la preview
-    /// nativa/del prefab de cada estilo.
+    /// nativa/del prefab de cada estilo. Ademas del cubo, el ghost incluye
+    /// una flecha simple pegada al piso (ver PortalDirectionArrow) que
+    /// indica el lado "frente" — mismo patron visual que el juego usa al
+    /// colocar puertas (una unica flecha clara integrada al ghost, no
+    /// piezas flotando por separado). A pedido explicito del usuario esta
+    /// flecha vive UNICAMENTE aca, durante la colocacion — no se muestra en
+    /// el portal ya colocado (existio una version anterior,
+    /// PortalExitIndicator, que se elimino).
     ///
     /// La deteccion de "que item tiene equipado el jugador local" tambien es
     /// best-effort por reflection (mismo patron defensivo que
@@ -192,10 +199,17 @@ namespace PortalMod
             }
         }
 
+        // Tamano de la flecha de direccion (ver PortalDirectionArrow).
+        private const float ArrowSize = 0.6f;
+
         /// <summary>
         /// Caja traslucida del tamaño exacto del marco (1 ancho x 2 alto x 1
-        /// profundo, ver MultiBlockDim en blocks.xml) — ver limitacion de
-        /// fidelidad documentada en el comentario de la clase.
+        /// profundo, ver MultiBlockDim en blocks.xml), con una flecha simple
+        /// pegada al piso (mismo patron visual que usa el juego al colocar
+        /// puertas: una unica flecha clara indicando el lado de
+        /// apertura/salida, integrada al ghost) que indica hacia donde va a
+        /// salir el jugador al usar el portal — ver limitacion de fidelidad
+        /// documentada en el comentario de la clase.
         /// </summary>
         private static GameObject BuildGhost()
         {
@@ -230,12 +244,12 @@ namespace PortalMod
                     material.color = new Color(0.55f, 0.63f, 0.71f, 0.35f);
                     renderer.material = material;
                 }
-                // Si ningun shader transparente resolvio (ver
-                // ApplyUnlitColor en PortalExitIndicator para el mismo
-                // riesgo de stripping), se deja el material opaco por
-                // defecto de la primitiva — el ghost se ve como una caja
-                // gris solida en vez de translucida, degradacion aceptable
-                // antes que romper la Feature entera.
+                // Si ningun shader transparente resolvio (mismo riesgo de
+                // stripping documentado en PortalDirectionArrow.
+                // ApplyUnlitColor), se deja el material opaco por defecto de
+                // la primitiva — el ghost se ve como una caja gris solida en
+                // vez de translucida, degradacion aceptable antes que romper
+                // la Feature entera.
             }
 
             // El pivote de un Cube de Unity es su CENTRO — se ajusta con un
@@ -246,6 +260,15 @@ namespace PortalMod
             var wrapper = new GameObject("PortalMod_PlacementGhostRoot");
             box.transform.SetParent(wrapper.transform, false);
             box.transform.localPosition = new Vector3(0f, 1f, 0f);
+
+            // Flecha pegada al piso del ghost (ver PortalDirectionArrow):
+            // al vivir en el plano local XZ con la punta hacia +Z, y
+            // "wrapper" ya rotado segun PortalOrientation.ToQuaternion
+            // (mismo eje +Z=Norte, ver PortalOrientation), apunta correcto
+            // sin rotacion extra aca.
+            var arrow = PortalDirectionArrow.Build(ArrowSize);
+            arrow.transform.SetParent(wrapper.transform, false);
+            arrow.transform.localPosition = new Vector3(0f, 0.03f, 0f);
 
             wrapper.SetActive(false);
             return wrapper;

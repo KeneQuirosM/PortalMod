@@ -172,9 +172,10 @@ namespace PortalMod
                 // Postfix ya trata "blockPos"/"__instance" como confiables —
                 // ver comentario del metodo), usando la MISMA convencion de
                 // rotacion que despues lee PortalTeleport (punto de salida "al
-                // frente") y PortalExitIndicator (flecha) — ver
-                // PortalOrientation para el detalle completo y las
-                // advertencias de confianza sobre el mapeo real del motor.
+                // frente") y PortalPlacementGhost (flecha del ghost de
+                // colocacion) — ver PortalOrientation para el detalle
+                // completo y las advertencias de confianza sobre el mapeo
+                // real del motor.
                 var world = GameManager.Instance != null ? GameManager.Instance.World : null;
                 PortalOrientation.ApplyPlayerFacingRotation(world, blockPos, player);
 
@@ -472,14 +473,6 @@ namespace PortalMod
                         ps.Play();
                     }
                 }
-
-                // Feature 2 ("indicador de salida"): agrega/actualiza la
-                // flecha que muestra por donde sale el jugador al usar este
-                // portal — ver PortalExitIndicator. Mismo hook (se reutiliza
-                // el mismo "modelTransform" ya resuelto arriba para las
-                // particulas) y misma proteccion contra re-disparos por
-                // pooling de chunk (EnsureIndicator no duplica si ya existe).
-                PortalExitIndicator.EnsureIndicator(modelTransform, _blockValue.rotation);
             }
             catch (Exception e)
             {

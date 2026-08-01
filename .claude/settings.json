@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git commit -m ' *)",
+      "Bash(node -e ' *)",
+      "Read(//e/SteamLibrary/steamapps/common/7 Days To Die/Data/Config/**)",
+      "Bash(GAME=\"/e/SteamLibrary/steamapps/common/7 Days To Die\" *)",
+      "Bash(awk '/<!--/{c++} /-->/{c--} /PlayParticleEffect/{print NR\": comment_depth=\"c\" -> \"$0}' Config/buffs.xml)",
+      "Bash(awk '/<block name=\"wallTorchLightPlayer\">/,/<\\\\/block>/' '/e/SteamLibrary/steamapps/common/7 Days To Die/Data/Config/blocks.xml')",
+      "Bash(awk '/<block name=\"lanternDecorLightBlue\">/,/<\\\\/block>/' '/e/SteamLibrary/steamapps/common/7 Days To Die/Data/Config/blocks.xml')",
+      "Bash(awk ' *)",
+      "Read(//e/SteamLibrary/steamapps/common/7 Days To Die/**)",
+      "Read(//e/SteamLibrary/steamapps/common/7 Days To Die/Mods/**)",
+      "Bash(powershell.exe -NoProfile -Command '[xml]$doc = Get-Content -Raw '\\\\''Config/items.xml'\\\\''; Write-Host '\\\\''items.xml OK'\\\\''')",
+      "Bash(VANILLA=\"/e/SteamLibrary/steamapps/common/7 Days To Die/Data/Config\" *)",
+      "Bash(MANAGED=\"/e/SteamLibrary/steamapps/common/7 Days To Die/7DaysToDie_Data/Managed\" *)",
+      "Read(//e/SteamLibrary/steamapps/common/7 Days To Die/7DaysToDie_Data/Managed/**)",
+      "Bash(echo \"--- exit code: $? ---\")",
+      "Bash(grep -n '^\\\\s*///.*<[a-zA-Z]' Harmony/src/PortalBiomes.cs Harmony/src/PortalPower.cs Harmony/src/PortalVisualFX.cs Harmony/src/PortalManager.cs Harmony/src/PortalBlockPatch.cs Harmony/src/PortalTeleport.cs Harmony/src/PortalUtils.cs Harmony/src/PortalHoverFX.cs)",
+      "PowerShell(try { [xml]$doc = Get-Content -Raw 'Config/blocks.xml'; Write-Host \"blocks.xml OK\" } catch { Write-Host \"blocks.xml FAILED: $_\" })",
+      "PowerShell(try { [xml]$doc = Get-Content -Raw 'Config/items.xml'; Write-Host \"items.xml OK\" } catch { Write-Host \"items.xml FAILED: $_\" })",
+      "PowerShell(try { [xml]$doc = Get-Content -Raw 'Config/recipes.xml'; Write-Host \"recipes.xml OK\" } catch { Write-Host \"recipes.xml FAILED: $_\" })",
+      "PowerShell(try { [xml]$doc = Get-Content -Raw 'ModInfo.xml'; Write-Host \"ModInfo.xml OK\" } catch { Write-Host \"ModInfo.xml FAILED: $_\" })",
+      "Read(//tmp/**)",
+      "Bash(sed -n '/<block name=\"pipeFireHazardBlack2m\">/,/<\\\\/block>/p' '/e/SteamLibrary/steamapps/common/7 Days To Die/Data/Config/blocks.xml')",
+      "Bash(sed -n '/<block name=\"emberPileDeco1\">/,/<\\\\/block>/p' '/e/SteamLibrary/steamapps/common/7 Days To Die/Data/Config/blocks.xml')",
+      "Bash(python3 -c ' *)",
+      "Bash(ls \"/e/SteamLibrary/steamapps/common/7 Days To Die/7DaysToDie_Data/Managed/\" | grep -i \"ParticleSystem\")",
+      "Read(//e/SteamLibrary/steamapps/common/7 Days To Die/7DaysToDie_Data/Managed//**)"
+    ],
+    "additionalDirectories": [
+      "E:\\SteamLibrary\\steamapps\\common\\7 Days To Die\\Data\\Config"
+    ]
+  }
+}

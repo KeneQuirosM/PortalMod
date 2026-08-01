@@ -1,0 +1,8 @@
+C:\Users\kenet\Desktop\mod 7d\Github\PortalMod\Harmony\obj\Releasee\PortalMod.csproj.AssemblyReference.cache
+C:\Users\kenet\Desktop\mod 7d\Github\PortalMod\Harmony\obj\Releasee\PortalMod.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\kenet\Desktop\mod 7d\Github\PortalMod\Harmony\obj\Releasee\PortalMod.csproj.CoreCompileInputs.cache
+C:\Users\kenet\Desktop\mod 7d\Github\PortalMod\Harmony\obj\Releasee\PortalMod.sourcelink.json
+C:\Users\kenet\Desktop\mod 7d\Github\PortalMod\Harmony\obj\Releasee\PortalMod.dll
+C:\Users\kenet\Desktop\mod 7d\Github\PortalMod\Harmony\obj\Releasee\PortalMod.pdb
+C:\Users\kenet\Desktop\mod 7d\Github\PortalMod\PortalMod.dll
+C:\Users\kenet\Desktop\mod 7d\Github\PortalMod\PortalMod.pdb
